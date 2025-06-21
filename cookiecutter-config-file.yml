@@ -1,0 +1,13 @@
+# This file contains values from Cookiecutter
+
+default_context:
+  project_name: "ask-reddit"
+  project_description: "A Python scraper using PRAW to extract Reddit comments for NLP and GPT model analysis. This project aims to collect comprehensive comment data from Reddit threads."
+  organization: "john-james-ai"
+  license: "MIT"
+  minimal_python_version: 3.9
+  github_name: "ask-reddit"
+  email: "john.james.ai.studio@gmail.com"
+  version: "0.1.0"
+  line_length: "100"
+  create_example_template: "cli"
