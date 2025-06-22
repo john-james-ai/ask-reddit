@@ -11,7 +11,7 @@
 # URL        : https://github.com/john-james-ai/ask-reddit/                                        #
 # ------------------------------------------------------------------------------------------------ #
 # Created    : Saturday June 21st 2025 02:29:04 pm                                                 #
-# Modified   : Sunday June 22nd 2025 04:55:49 am                                                   #
+# Modified   : Sunday June 22nd 2025 07:23:15 am                                                   #
 # ------------------------------------------------------------------------------------------------ #
 # License    : MIT License                                                                         #
 # Copyright  : (c) 2025 John James                                                                 #
@@ -19,7 +19,6 @@
 from typing import Dict, List
 
 import logging
-import time
 from datetime import datetime, timedelta, timezone
 
 import praw
@@ -28,6 +27,7 @@ from tqdm import tqdm
 from scraper.constants import BatchSpan
 from scraper.date import DateTime
 from scraper.model import GenAIModel
+from scraper.monitor import CircuitBreaker
 from scraper.persist import FileManager
 from scraper.print import Printer
 
@@ -57,6 +57,7 @@ class RedditScraper:
         scraper: praw.Reddit,
         model: GenAIModel,
         printer: Printer,
+        circuit_breaker: CircuitBreaker,
         subreddit: str,
         days: int,
         batch_span: BatchSpan,
@@ -68,6 +69,7 @@ class RedditScraper:
         self._subreddit = subreddit
         self._model = model
         self._printer = printer
+        self._circuit_breaker = circuit_breaker
         self._days = days
         self._batch_span = batch_span
         self._filemanager = filemanager
@@ -81,9 +83,6 @@ class RedditScraper:
         self._current_batch_span_str = ""
         self._start_dt = None
 
-        # --- Configuration ---
-        self._delay = 60 / rate_limit_per_minute  # e.g., 60 req/min -> 1s delay
-
         # Set timestamp stop condition
         now_utc = datetime.now(timezone.utc)
         self._stop_utc = now_utc - timedelta(days=self._days)
@@ -93,7 +92,6 @@ class RedditScraper:
         Runs the main scraping loop, processing submissions and saving them in batchs.
         """
         self._startup()
-        n_consecutive_errors = 0
         # This list will hold the data ONLY for the current batch (e.g., one month).
         current_batch_data = []
 
@@ -103,6 +101,7 @@ class RedditScraper:
         pbar = tqdm(total=None, desc=f"\t\tProcessing...")
         for submission in self._scraper.subreddit(self._subreddit).new(limit=None):
             try:
+                self._circuit_breaker.success()
                 submission_dt = datetime.fromtimestamp(submission.created_utc, timezone.utc)
 
                 # Stop Condition Check
@@ -132,23 +131,16 @@ class RedditScraper:
                 submission_data = self._process_submission(submission)
                 current_batch_data.append(submission_data)
 
-                # Reset consecutive error count on a successful operation
-                n_consecutive_errors = 0
-
-                # Avoids the rate limit
-                time.sleep(self._delay)
-
                 # Update the progress bar
                 pbar.update(1)
 
             except Exception as e:
-                logger.exception(f"Failed to process submission {submission.id}. Error: {e}")
-                n_consecutive_errors += 1
-                if n_consecutive_errors >= self._tolerance:
-                    logger.critical(
-                        f"Error tolerance of {self._tolerance} exceeded. Aborting scrape."
-                    )
-                    raise  # Re-raise the exception to stop the program
+                error_context = {
+                    "Batch": self._n_batches,
+                    "Submissions": self._n_submissions,
+                    "Comments": self._n_comments,
+                }
+                self._circuit_breaker.failure(context=error_context)
 
         # Close the progress bar
         pbar.close()

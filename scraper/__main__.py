@@ -11,7 +11,7 @@
 # URL        : https://github.com/john-james-ai/ask-reddit/                                        #
 # ------------------------------------------------------------------------------------------------ #
 # Created    : Saturday June 21st 2025 12:28:41 pm                                                 #
-# Modified   : Sunday June 22nd 2025 04:27:27 am                                                   #
+# Modified   : Sunday June 22nd 2025 07:16:15 am                                                   #
 # ------------------------------------------------------------------------------------------------ #
 # License    : MIT License                                                                         #
 # Copyright  : (c) 2025 John James                                                                 #
@@ -27,8 +27,9 @@ import praw
 import typer
 from dotenv import load_dotenv
 
-from scraper.constants import DEFAULT_ERROR_TOLERANCE, DEFAULT_RATE_LIMIT_PER_MINUTE, BatchSpan
+from scraper.constants import BatchSpan
 from scraper.model import GenAIModel
+from scraper.monitor import CircuitBreaker
 from scraper.persist import FileManager
 from scraper.print import Printer
 from scraper.scrape import RedditScraper
@@ -45,6 +46,7 @@ app = typer.Typer(
     help="A CLI tool to scrape Reddit submissions and comments for a specified time period.",
     add_completion=False,
 )
+
 
 def setup_logging(log_filepath: str) -> None:
     """
@@ -72,16 +74,14 @@ def setup_logging(log_filepath: str) -> None:
     )
 
     # Create a formatter and set it for the handler
-    formatter = logging.Formatter(
-        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    )
+    formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
     handler.setFormatter(formatter)
 
     # Add the handler to the root logger
     logger.addHandler(handler)
 
     # Also log to the console if configured to do so
-    if os.getenv('LOG_TO_CONSOLE', 'false').lower() == 'true':
+    if os.getenv("LOG_TO_CONSOLE", "false").lower() == "true":
         console_handler = logging.StreamHandler(sys.stdout)
         console_handler.setFormatter(formatter)
         logger.addHandler(console_handler)
@@ -95,7 +95,9 @@ def create_praw_instance() -> Optional[praw.Reddit]:
     from environment variables.
     """
 
-    USER_AGENT = f"python:{os.getenv("APP_NAME")}:{os.getenv("VERSION")} by u/{os.getenv("REDDIT_USERNAME")}"
+    USER_AGENT = (
+        f"python:{os.getenv("APP_NAME")}:{os.getenv("VERSION")} by u/{os.getenv("REDDIT_USERNAME")}"
+    )
     try:
         reddit = praw.Reddit(
             client_id=os.getenv("REDDIT_CLIENT_ID"),
@@ -111,16 +113,20 @@ def create_praw_instance() -> Optional[praw.Reddit]:
         logging.error(f"Failed to create PRAW instance: {e}")
         return None
 
+
 def create_file_manager(subreddit: str) -> Optional[FileManager]:
-    """ Creates a file manager instance for persistance"""
+    """Creates a file manager instance for persistance"""
     FILE_LOCATION = os.getenv("FILE_LOCATION", "data")
     SOURCE = os.getenv("SOURCE", "reddit")
-    TIMESTAMP = os.getenv("TIMESTAMP", 'true').lower() == "true"
+    TIMESTAMP = os.getenv("TIMESTAMP", "true").lower() == "true"
     try:
-        return FileManager(source=SOURCE, topic=subreddit, file_location=FILE_LOCATION, timestamp=TIMESTAMP)
+        return FileManager(
+            source=SOURCE, topic=subreddit, file_location=FILE_LOCATION, timestamp=TIMESTAMP
+        )
     except Exception as e:
         logging.exception(f"Failed to create FileManager instance: {e}")
         return None
+
 
 @app.command()
 def main(
@@ -137,10 +143,10 @@ def main(
         help="The number of past days to extract data for.",
     ),
     batch_span: BatchSpan = typer.Option(
-        BatchSpan.MONTH, # Default value must be an Enum member
+        BatchSpan.MONTH,  # Default value must be an Enum member
         "--batch",
         "-c",
-        case_sensitive=False, # Allows user to type 'M' or 'D'
+        case_sensitive=False,  # Allows user to type 'M' or 'D'
         help="The time span for batch output files.",
     ),
 ):
@@ -173,13 +179,19 @@ def main(
     # Instantiate the printer object
     printer = Printer()
 
-    # Instantiate and run the scraper
-    RATE_LIMIT = int(os.getenv("REDDIT_RATE_LIMIT", DEFAULT_RATE_LIMIT_PER_MINUTE))
-    TOLERANCE = int(os.getenv("ERROR_TOLERANCE", DEFAULT_ERROR_TOLERANCE))
-    scraper = RedditScraper(scraper=reddit, model=model, printer=printer, subreddit=subreddit, days=days, batch_span=batch_span, filemanager=file_manager, rate_limit_per_minute=RATE_LIMIT, tolerance=TOLERANCE)
+    # Instantiate the circuit breaker
+    cb = CircuitBreaker()
+    scraper = RedditScraper(
+        scraper=reddit,
+        model=model,
+        printer=printer,
+        circuit_breaker=cb,
+        subreddit=subreddit,
+        days=days,
+        batch_span=batch_span,
+        filemanager=file_manager,
+    )
     scraper.scrape()
-
-    logging.info("Scraping process finished.")
 
 
 if __name__ == "__main__":

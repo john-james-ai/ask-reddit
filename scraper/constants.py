@@ -11,7 +11,7 @@
 # URL        : https://github.com/john-james-ai/ask-reddit/                                        #
 # ------------------------------------------------------------------------------------------------ #
 # Created    : Saturday June 21st 2025 07:42:33 pm                                                 #
-# Modified   : Sunday June 22nd 2025 04:08:12 am                                                   #
+# Modified   : Sunday June 22nd 2025 06:48:22 am                                                   #
 # ------------------------------------------------------------------------------------------------ #
 # License    : MIT License                                                                         #
 # Copyright  : (c) 2025 John James                                                                 #
@@ -27,6 +27,11 @@ DEFAULT_ERROR_TOLERANCE = 5
 DEFAULT_RATE_LIMIT_PER_MINUTE = 85
 DEFAULT_DAYS = 30
 DEFAULT_JSON_INDENT = 2
+DEFAULT_SUCCESS_THRESHOLD = 3
+DEFAULT_FAILURE_THRESHOLD = 5
+DEFAULT_OPEN_FACTOR = 10
+DEFAULT_HALF_OPEN_FACTOR = 2
+
 
 # ------------------------------------------------------------------------------------------------ #
 class BatchSpan(Enum):
@@ -44,8 +49,9 @@ class BatchSpan(Enum):
         value (str): The short character identifier (e.g., 'd' or 'm').
         fmt (str): The ``strftime`` compatible format string (e.g., '%Y-%m-%d').
     """
+
     DAY = ("d", "%Y-%m-%d")
-    MONTH = ('m', "%Y-%m")
+    MONTH = ("m", "%Y-%m")
 
     @classmethod
     def from_value(cls, value: str) -> BatchSpan:
