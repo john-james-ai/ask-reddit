@@ -11,7 +11,7 @@
 # URL        : https://github.com/john-james-ai/ask-reddit/                                        #
 # ------------------------------------------------------------------------------------------------ #
 # Created    : Saturday June 21st 2025 12:28:41 pm                                                 #
-# Modified   : Saturday June 21st 2025 10:16:29 pm                                                 #
+# Modified   : Sunday June 22nd 2025 04:27:27 am                                                   #
 # ------------------------------------------------------------------------------------------------ #
 # License    : MIT License                                                                         #
 # Copyright  : (c) 2025 John James                                                                 #
@@ -27,8 +27,10 @@ import praw
 import typer
 from dotenv import load_dotenv
 
-from scraper.constants import ChunkSpan
+from scraper.constants import DEFAULT_ERROR_TOLERANCE, DEFAULT_RATE_LIMIT_PER_MINUTE, BatchSpan
+from scraper.model import GenAIModel
 from scraper.persist import FileManager
+from scraper.print import Printer
 from scraper.scrape import RedditScraper
 
 # ------------------------------------------------------------------------------------------------ #
@@ -78,10 +80,11 @@ def setup_logging(log_filepath: str) -> None:
     # Add the handler to the root logger
     logger.addHandler(handler)
 
-    # Also log to the console for immediate feedback
-    console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setFormatter(formatter)
-    logger.addHandler(console_handler)
+    # Also log to the console if configured to do so
+    if os.getenv('LOG_TO_CONSOLE', 'false').lower() == 'true':
+        console_handler = logging.StreamHandler(sys.stdout)
+        console_handler.setFormatter(formatter)
+        logger.addHandler(console_handler)
 
     logging.info("Logging has been configured successfully.")
 
@@ -133,12 +136,12 @@ def main(
         "-d",
         help="The number of past days to extract data for.",
     ),
-    chunk_span: ChunkSpan = typer.Option(
-        ChunkSpan.MONTH, # Default value must be an Enum member
-        "--chunk",
+    batch_span: BatchSpan = typer.Option(
+        BatchSpan.MONTH, # Default value must be an Enum member
+        "--batch",
         "-c",
         case_sensitive=False, # Allows user to type 'M' or 'D'
-        help="The time span for chunking output files.",
+        help="The time span for batch output files.",
     ),
 ):
     """
@@ -149,12 +152,8 @@ def main(
     log_filepath = os.getenv("LOG_FILEPATH", "logs/default_scraper.log")
     setup_logging(log_filepath)
 
-    # Acknowledge Invocation and Parameters
-    typer.echo(f"Starting scraper with the following settings:")
-    typer.echo(f"  - Subreddit: r/{subreddit}")
-    typer.echo(f"  - Time Period: Last {days} days")
-    typer.echo(f"  - File Chunking: By { 'Month' if chunk_span == ChunkSpan.MONTH else 'Day' }")
-    logging.info(f"CLI started for r/{subreddit}, days={days}, chunk='{chunk_span}'")
+    # Acknowledge command line invocation and parameters
+    logging.info(f"CLI started for r/{subreddit}, days={days}, batch='{batch_span}'")
 
     # Obtain the reddit praw instance
     reddit = create_praw_instance()
@@ -168,14 +167,19 @@ def main(
         logging.critical("Exiting due to failed FileManager instantiation.")
         raise typer.Exit(code=1)
 
-    # Instantiate the scraper
-    RATE_LIMIT = int(os.getenv("REDDIT_RATE_LIMIT", 100))
-    TOLERANCE = int(os.getenv("ERROR_TOLERANCE", 5))
-    scraper = RedditScraper(scraper=reddit, subreddit=subreddit, days=days, chunk_span=chunk_span, filemanager=file_manager, rate_limit_per_minute=RATE_LIMIT, tolerance=TOLERANCE)
+    # Instantiate the generative AI client used to count tokens
+    model = GenAIModel()
+
+    # Instantiate the printer object
+    printer = Printer()
+
+    # Instantiate and run the scraper
+    RATE_LIMIT = int(os.getenv("REDDIT_RATE_LIMIT", DEFAULT_RATE_LIMIT_PER_MINUTE))
+    TOLERANCE = int(os.getenv("ERROR_TOLERANCE", DEFAULT_ERROR_TOLERANCE))
+    scraper = RedditScraper(scraper=reddit, model=model, printer=printer, subreddit=subreddit, days=days, batch_span=batch_span, filemanager=file_manager, rate_limit_per_minute=RATE_LIMIT, tolerance=TOLERANCE)
     scraper.scrape()
 
     logging.info("Scraping process finished.")
-    typer.echo("\nScraping complete!")
 
 
 if __name__ == "__main__":

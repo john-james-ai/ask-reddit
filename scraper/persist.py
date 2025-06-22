@@ -11,7 +11,7 @@
 # URL        : https://github.com/john-james-ai/ask-reddit/                                        #
 # ------------------------------------------------------------------------------------------------ #
 # Created    : Saturday June 21st 2025 02:41:05 pm                                                 #
-# Modified   : Saturday June 21st 2025 07:35:16 pm                                                 #
+# Modified   : Sunday June 22nd 2025 04:41:08 am                                                   #
 # ------------------------------------------------------------------------------------------------ #
 # License    : MIT License                                                                         #
 # Copyright  : (c) 2025 John James                                                                 #
@@ -19,8 +19,14 @@
 from typing import Any, Dict, List
 
 import json
+import logging
 import os
 from datetime import datetime
+
+from scraper.constants import DEFAULT_JSON_INDENT
+
+# ------------------------------------------------------------------------------------------------ #
+logger = logging.getLogger(__name__)
 
 
 # ------------------------------------------------------------------------------------------------ #
@@ -37,7 +43,10 @@ class FileManager:
         _file_location (str): The directory where files will be stored.
         _timestamp (bool): If True, appends the current date to the filename.
     """
-    def __init__(self, source: str, topic: str, file_location: str = "data", timestamp: bool = True) -> None:
+
+    def __init__(
+        self, source: str, topic: str, file_location: str = "data", timestamp: bool = True
+    ) -> None:
         """Initializes the FileManager with configuration settings."""
         self._source = source
         self._topic = topic
@@ -66,10 +75,9 @@ class FileManager:
         """
         filepath = self.create_filepath(span=span)
 
-        with open(filepath, 'r', encoding='utf-8') as json_file:
+        with open(filepath, "r", encoding="utf-8") as json_file:
             data = json.load(json_file)
             return data
-
 
     def write(self, data: list, span: str) -> None:
         """Writes data to a specified JSON file.
@@ -87,9 +95,9 @@ class FileManager:
         filepath = self.create_filepath(span=span)
 
         # Open the file in write mode and save as json
-        with open(filepath, 'w', encoding='utf-8') as json_file:
-            json.dump(data, json_file, indent=4, ensure_ascii=False)
-
+        with open(filepath, "w", encoding="utf-8") as json_file:
+            logger.info(f"Saving final data batch for '{span}'.")
+            json.dump(data, json_file, indent=DEFAULT_JSON_INDENT, ensure_ascii=False)
 
     def create_filepath(self, span: str) -> str:
         """Constructs a standardized file path and name.

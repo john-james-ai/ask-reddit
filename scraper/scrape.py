@@ -11,7 +11,7 @@
 # URL        : https://github.com/john-james-ai/ask-reddit/                                        #
 # ------------------------------------------------------------------------------------------------ #
 # Created    : Saturday June 21st 2025 02:29:04 pm                                                 #
-# Modified   : Saturday June 21st 2025 11:01:18 pm                                                 #
+# Modified   : Sunday June 22nd 2025 04:55:49 am                                                   #
 # ------------------------------------------------------------------------------------------------ #
 # License    : MIT License                                                                         #
 # Copyright  : (c) 2025 John James                                                                 #
@@ -23,42 +23,63 @@ import time
 from datetime import datetime, timedelta, timezone
 
 import praw
+from tqdm import tqdm
 
-from scraper.constants import ChunkSpan
+from scraper.constants import BatchSpan
+from scraper.date import DateTime
+from scraper.model import GenAIModel
 from scraper.persist import FileManager
+from scraper.print import Printer
 
 # ------------------------------------------------------------------------------------------------ #
 logger = logging.getLogger(__name__)
 # ------------------------------------------------------------------------------------------------ #
+
 
 class RedditScraper:
     """Scrapes submissions and comments from a specified subreddit for a defined period.
 
     This class is designed for a single, complete scraping job. It orchestrates
     the process of fetching data via the PRAW API, processing submissions and
-    comments, and saving the results in chunks using a FileManager.
+    comments, and saving the results in batchs using a FileManager.
 
     Attributes:
         _scraper (praw.Reddit): An authenticated PRAW Reddit instance.
         _subreddit (str): The name of the subreddit to scrape.
         _days (int): The number of past days to extract data for.
-        _chunk_span (ChunkSpan): The enum member for file grouping (DAY or MONTH).
+        _batch_span (BatchSpan): The enum member for file grouping (DAY or MONTH).
         _filemanager (FileManager): An instance of FileManager to handle writing files.
         _tolerance (int): The number of consecutive errors to tolerate before stopping.
     """
 
-    def __init__(self, scraper: praw.Reddit, subreddit: str, days: int, chunk_span: ChunkSpan, filemanager: FileManager, rate_limit_per_minute: int = 85, tolerance: int = 5) -> None:
+    def __init__(
+        self,
+        scraper: praw.Reddit,
+        model: GenAIModel,
+        printer: Printer,
+        subreddit: str,
+        days: int,
+        batch_span: BatchSpan,
+        filemanager: FileManager,
+        rate_limit_per_minute: int = 85,
+        tolerance: int = 5,
+    ) -> None:
         self._scraper = scraper
         self._subreddit = subreddit
+        self._model = model
+        self._printer = printer
         self._days = days
-        self._chunk_span = chunk_span
+        self._batch_span = batch_span
         self._filemanager = filemanager
         self._tolerance = tolerance
 
         # --- State and Statistics ---
+        self._n_batches = 0
         self._n_submissions = 0
         self._n_comments = 0
-        self._current_chunk_span_str = ""
+        self._n_tokens = 0
+        self._current_batch_span_str = ""
+        self._start_dt = None
 
         # --- Configuration ---
         self._delay = 60 / rate_limit_per_minute  # e.g., 60 req/min -> 1s delay
@@ -69,75 +90,106 @@ class RedditScraper:
 
     def scrape(self) -> None:
         """
-        Runs the main scraping loop, processing submissions and saving them in chunks.
+        Runs the main scraping loop, processing submissions and saving them in batchs.
         """
+        self._startup()
         n_consecutive_errors = 0
-        # This list will hold the data ONLY for the current chunk (e.g., one month).
-        current_chunk_data = []
-
-        logger.info(f"Starting scrape for r/{self._subreddit} for the last {self._days} days.")
+        # This list will hold the data ONLY for the current batch (e.g., one month).
+        current_batch_data = []
 
         # This 'for' loop is the only control loop needed. PRAW handles the pagination
         # of submissions automatically. The loop is terminated by 'break' when the
         # stop condition is met.
+        pbar = tqdm(total=None, desc=f"\t\tProcessing...")
         for submission in self._scraper.subreddit(self._subreddit).new(limit=None):
             try:
                 submission_dt = datetime.fromtimestamp(submission.created_utc, timezone.utc)
 
-                # --- Stop Condition Check ---
+                # Stop Condition Check
                 # This check happens inside the loop, as you correctly pointed out.
                 if submission_dt < self._stop_utc:
-                    logger.info("Stop condition met: Found a submission older than the target date.")
+                    logger.info(
+                        "Stop condition met: Found a submission older than the target date."
+                    )
                     break  # Exit the for loop cleanly.
 
-                # --- Chunk Processing Logic ---
-                # This logic ensures data is saved and cleared correctly for each chunk.
-                submission_span_str = submission_dt.strftime(self._chunk_span.fmt)
+                # Batch Processing Logic
+                # This logic ensures data is saved and cleared correctly for each batch.
+                submission_span_str = submission_dt.strftime(self._batch_span.fmt)
 
-                # If we've entered a new month/day, save the previous chunk's data
-                # The check `self._current_chunk_span_str != ""` ensures we don't write an empty file on the first run.
-                if submission_span_str != self._current_chunk_span_str and self._current_chunk_span_str != "":
-                    logger.info(f"New chunk detected. Saving data for '{self._current_chunk_span_str}'.")
-                    self._filemanager.write(data=current_chunk_data, span=self._current_chunk_span_str)
-                    current_chunk_data.clear() # CRITICAL: Reset the list for the new chunk.
+                # If we've entered a new month/day, save the previous batch's data
+                # The check `self._current_batch_span_str != ""` ensures we don't write an empty file on the first run.
+                if (
+                    submission_span_str != self._current_batch_span_str
+                    and self._current_batch_span_str != ""
+                ):
+                    self._process_batch(current_batch_data=current_batch_data)
+                    current_batch_data.clear()  # Reset the list for the new batch.
 
-                self._current_chunk_span_str = submission_span_str
+                self._current_batch_span_str = submission_span_str
 
-                # --- Process the submission ---
+                # Process the submission
                 submission_data = self._process_submission(submission)
-                current_chunk_data.append(submission_data)
+                current_batch_data.append(submission_data)
 
                 # Reset consecutive error count on a successful operation
                 n_consecutive_errors = 0
 
+                # Avoids the rate limit
                 time.sleep(self._delay)
+
+                # Update the progress bar
+                pbar.update(1)
 
             except Exception as e:
                 logger.exception(f"Failed to process submission {submission.id}. Error: {e}")
                 n_consecutive_errors += 1
                 if n_consecutive_errors >= self._tolerance:
-                    logger.critical(f"Error tolerance of {self._tolerance} exceeded. Aborting scrape.")
+                    logger.critical(
+                        f"Error tolerance of {self._tolerance} exceeded. Aborting scrape."
+                    )
                     raise  # Re-raise the exception to stop the program
 
-        # This call ensures the final, partially-filled chunk is saved.
-        self._wrap_up(final_chunk_data=current_chunk_data)
+        # Close the progress bar
+        pbar.close()
+        # This call ensures the final, partially-filled batch is saved.
+        self._wrap_up(final_batch_data=current_batch_data)
+
+    def _startup(self) -> None:
+        """Initializes the scraping process."""
+        print(f"\n{'='*80}")
+        self._start_dt = datetime.now()
+        logger.info(f"Starting scrape for r/{self._subreddit} for the last {self._days} days.")
+        # Print summary information
+        title = f"Reddit Scraper Started on {self._start_dt.strftime('%Y-%m-%d at %H:%M:%S')}"
+        summary = {
+            "Subreddit": f"r/{self._subreddit}",
+            "Time Period": f"Last {self._days} days",
+            "File Batch": "Month" if self._batch_span == BatchSpan.MONTH else "Day",
+        }
+        self._printer.print_dict(title=title, data=summary)
+        print(f"{'-'*80}")
+
+    def _process_batch(self, current_batch_data: List) -> None:
+        """Logs new batch, counts tokens in batch and saves to file."""
+
+        logger.info(f"New batch detected. Saving data for '{self._current_batch_span_str}'.")
+        self._n_batches += 1
+        # Count number of tokens
+        self._n_tokens += self._model.count_tokens(data=current_batch_data)
+        # Persist the batch to file.
+        self._filemanager.write(data=current_batch_data, span=self._current_batch_span_str)
 
     def _process_submission(self, submission: praw.models.Submission) -> Dict:
         """Processes a single submission and its comments, returning a data dictionary."""
         self._n_submissions += 1
-        logger.info(f"Processing submission #{self._n_submissions}: '{submission.title}'")
 
         submission_data = {
             "submission_id": f"t3_{submission.id}",
             "title": submission.title,
             "author": submission.author.name if submission.author else "[deleted]",
-            "created_utc": submission.created_utc,
-            "score": submission.score,
-            "upvote_ratio": submission.upvote_ratio,
-            "num_comments": submission.num_comments,
-            "permalink": submission.permalink,
             "selftext": submission.selftext,
-            "comments": []
+            "comments": [],
         }
 
         # This populates the "comments" list within the dictionary
@@ -153,31 +205,51 @@ class RedditScraper:
                 continue
 
             self._n_comments += 1
-            comments_list.append({
-                "comment_id": f"t1_{comment.id}",
-                "author": comment.author.name,
-                "created_utc": comment.created_utc,
-                "score": comment.score,
-                "body": comment.body,
-                "parent_id": comment.parent_id,
-                "depth": comment.depth
-            })
+            comments_list.append(
+                {
+                    "comment_id": f"t1_{comment.id}",
+                    "author": comment.author.name,
+                    "body": comment.body,
+                }
+            )
 
-    def _wrap_up(self, final_chunk_data: List) -> None:
-        """Saves the final data chunk and prints a summary of the job."""
+    def _wrap_up(self, final_batch_data: List) -> None:
+        """Saves the final data batch and prints a summary of the job."""
+        # Obtain duration as string and as seconds.
+        end_dt = datetime.now()
+        duration = end_dt - self._start_dt
+        duration_sec = DateTime.get_seconds(td=duration)
+        duration_str = DateTime.format_timedelta(td=duration)
 
-        # CRITICAL: Save the final chunk of data that was in memory when the loop ended.
-        if final_chunk_data:
-            logger.info(f"Saving final data chunk for '{self._current_chunk_span_str}'.")
-            self._filemanager.write(data=final_chunk_data, span=self._current_chunk_span_str)
+        # Save the final batch and update the token count
+        if final_batch_data:
+            self._n_batches += 1
+            self._filemanager.write(data=final_batch_data, span=self._current_batch_span_str)
+            # Count number of tokens in final batch and add to token count
+            self._n_tokens += self._model.count_tokens(data=final_batch_data)
 
-        save_dt = datetime.now()
-        summary = (
-            f"\n{'='*80}\n"
-            f"Scraping for r/{self._subreddit} completed on {save_dt.strftime('%Y-%m-%d at %H:%M:%S')}\n"
-            f"Total Submissions Processed: {self._n_submissions}\n"
-            f"Total Comments Processed: {self._n_comments}\n"
-            f"{'='*80}"
-        )
-        print(summary)
+        # Compute Statistics
+        submissions_per_min = round(self._n_submissions / duration_sec * 60, 2)
+        comments_per_min = round(self._n_comments / duration_sec * 60, 2)
+        tokens_per_min = round(self._n_tokens / duration_sec * 60, 2)
+
+        # Format Summary
+        summary = {
+            "Days Captured": self._days,
+            "Duration": duration_str,
+            "Total Batches": self._n_batches,
+            "Total Submissions": self._n_submissions,
+            "Total Comments": self._n_comments,
+            "Total Tokens": self._n_tokens,
+            "Submissions per Minute": submissions_per_min,
+            "Comments per Minute": comments_per_min,
+            "Tokens per Minute": tokens_per_min,
+        }
+
+        # Print Summary
+        print(f"{'-'*80}")
+        title = f"Reddit Scraper Completed on {end_dt.strftime('%Y-%m-%d at %H:%M:%S')}"
+        self._printer.print_dict(data=summary, title=title)
+        print(f"{'='*80}\n")
+
         logger.info("Scraping job finished successfully.")

@@ -19,5 +19,7 @@
         "source.fixAll": "explicit",
         "source.organizeImports": "explicit"
     },
+    "python.analysis.autoImportCompletions": true,
+    "editor.defaultFormatter": "ms-python.black-formatter",
     }
 }
