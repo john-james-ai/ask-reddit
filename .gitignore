@@ -20,6 +20,9 @@ notes/
 # Data
 data/
 
+# Env
+.env
+
 # Logs
 logs/
 
