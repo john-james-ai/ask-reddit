@@ -32,7 +32,7 @@ classifiers = [  #! Update me
 "ask-reddit" = "ask_reddit.__main__:app"
 
 [tool.poetry.dependencies]
-python = "^3.9"
+python = "^3.13"
 
 typer = {extras = ["all"], version = "^0.4.0"}
 rich = "^10.14.0"
@@ -41,12 +41,12 @@ rich = "^10.14.0"
 bandit = "^1.7.1"
 black = {version = "^21.10b0", allow-prereleases = true}
 darglint = "^1.8.1"
-isort = {extras = ["colors"], version = "^5.10.1"}
+isort = {extras = ["colors"], version = "^5.13.2"}
 mypy = "^0.910"
 mypy-extensions = "^0.4.3"
 pre-commit = "^2.15.0"
 pydocstyle = "^6.1.1"
-pylint = "^2.11.1"
+pylance = "^2025.6.1"
 pytest = "^6.2.5"
 pyupgrade = "^2.29.1"
 safety = "^1.10.3"

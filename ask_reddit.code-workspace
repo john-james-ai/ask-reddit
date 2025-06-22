@@ -4,5 +4,20 @@
 			"path": "."
 		}
     ],
-    "settings": {}
+    "settings": {
+        "psi-header.variables": [
+        ["projectCreationYear", "2025"],
+        ["url", "https://github.com/john-james-ai/ask-reddit/"],
+        ["projectname", "Ask Reddit"],
+        ["version", "0.1.0"],
+        ["pythonversion","3.13.5"]
+    ],
+    "python.languageServer": "Pylance",
+    "psi-header.config": {},
+    "editor.codeActionsOnSave": {
+        "source.unusedImports": "explicit",
+        "source.fixAll": "explicit",
+        "source.organizeImports": "explicit"
+    },
+    }
 }

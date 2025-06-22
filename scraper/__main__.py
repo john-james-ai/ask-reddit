@@ -1,66 +1,181 @@
-# type: ignore[attr-defined]
+#!/bin/env python3
+# -*- coding:utf-8 -*-
+# ================================================================================================ #
+# Project    : Ask Reddit                                                                          #
+# Version    : 0.1.0                                                                               #
+# Python     : 3.13.5                                                                              #
+# Filename   : /scraper/__main__.py                                                                #
+# ------------------------------------------------------------------------------------------------ #
+# Author     : John James                                                                          #
+# Email      : john@variancexplained.com                                                           #
+# URL        : https://github.com/john-james-ai/ask-reddit/                                        #
+# ------------------------------------------------------------------------------------------------ #
+# Created    : Saturday June 21st 2025 12:28:41 pm                                                 #
+# Modified   : Saturday June 21st 2025 10:16:29 pm                                                 #
+# ------------------------------------------------------------------------------------------------ #
+# License    : MIT License                                                                         #
+# Copyright  : (c) 2025 John James                                                                 #
+# ================================================================================================ #
 from typing import Optional
 
-from enum import Enum
-from random import choice
+import logging
+import logging.handlers
+import os
+import sys
 
+import praw
 import typer
-from rich.console import Console
+from dotenv import load_dotenv
 
-from ask_reddit import version
-from ask_reddit.example import hello
+from scraper.constants import ChunkSpan
+from scraper.persist import FileManager
+from scraper.scrape import RedditScraper
 
-
-class Color(str, Enum):
-    white = "white"
-    red = "red"
-    cyan = "cyan"
-    magenta = "magenta"
-    yellow = "yellow"
-    green = "green"
+# ------------------------------------------------------------------------------------------------ #
+load_dotenv()
+# ------------------------------------------------------------------------------------------------ #
 
 
+# --- Typer App Initialization ---
+# This creates the main application object.
 app = typer.Typer(
-    name="ask-reddit",
-    help="A Python scraper using PRAW to extract Reddit comments for NLP and GPT model analysis. This project aims to collect comprehensive comment data from Reddit threads.",
+    name="Reddit Scraper",
+    help="A CLI tool to scrape Reddit submissions and comments for a specified time period.",
     add_completion=False,
 )
-console = Console()
+
+def setup_logging(log_filepath: str) -> None:
+    """
+    Configures a time-rotating logger.
+
+    Log files will rotate daily, and up to 7 old log files will be kept.
+    This function configures the root logger, so any module using
+    logging.getLogger(__name__) will inherit this configuration.
+    """
+    # Ensure the log directory exists
+    log_dir = os.path.dirname(log_filepath)
+    os.makedirs(log_dir, exist_ok=True)
+
+    # Get the root logger
+    logger = logging.getLogger()
+    logger.setLevel(logging.INFO)
+
+    # Prevent handlers from being added multiple times
+    if logger.hasHandlers():
+        logger.handlers.clear()
+
+    # Create a handler for rotating files
+    handler = logging.handlers.TimedRotatingFileHandler(
+        log_filepath, when="d", interval=1, backupCount=7
+    )
+
+    # Create a formatter and set it for the handler
+    formatter = logging.Formatter(
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
+    handler.setFormatter(formatter)
+
+    # Add the handler to the root logger
+    logger.addHandler(handler)
+
+    # Also log to the console for immediate feedback
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setFormatter(formatter)
+    logger.addHandler(console_handler)
+
+    logging.info("Logging has been configured successfully.")
 
 
-def version_callback(print_version: bool) -> None:
-    """Print the version of the package."""
-    if print_version:
-        console.print(f"[yellow]ask-reddit[/] version: [bold blue]{version}[/]")
-        raise typer.Exit()
+def create_praw_instance() -> Optional[praw.Reddit]:
+    """
+    Creates and authenticates a PRAW Reddit instance using credentials
+    from environment variables.
+    """
 
+    USER_AGENT = f"python:{os.getenv("APP_NAME")}:{os.getenv("VERSION")} by u/{os.getenv("REDDIT_USERNAME")}"
+    try:
+        reddit = praw.Reddit(
+            client_id=os.getenv("REDDIT_CLIENT_ID"),
+            client_secret=os.getenv("REDDIT_CLIENT_SECRET"),
+            user_agent=USER_AGENT,
+            username=os.getenv("REDDIT_USERNAME"),
+            password=os.getenv("REDDIT_PASSWORD"),
+        )
+        # Validate credentials by trying to access user data
+        logging.info(f"Successfully authenticated as Reddit user: {reddit.user.me()}")
+        return reddit
+    except Exception as e:
+        logging.error(f"Failed to create PRAW instance: {e}")
+        return None
 
-@app.command(name="")
+def create_file_manager(subreddit: str) -> Optional[FileManager]:
+    """ Creates a file manager instance for persistance"""
+    FILE_LOCATION = os.getenv("FILE_LOCATION", "data")
+    SOURCE = os.getenv("SOURCE", "reddit")
+    TIMESTAMP = os.getenv("TIMESTAMP", 'true').lower() == "true"
+    try:
+        return FileManager(source=SOURCE, topic=subreddit, file_location=FILE_LOCATION, timestamp=TIMESTAMP)
+    except Exception as e:
+        logging.exception(f"Failed to create FileManager instance: {e}")
+        return None
+
+@app.command()
 def main(
-    name: str = typer.Option(..., help="Person to greet."),
-    color: Optional[Color] = typer.Option(
-        None,
+    subreddit: str = typer.Option(
+        ...,  # The '...' makes this option required.
+        "--subreddit",
+        "-s",
+        help="The name of the subreddit to scrape (e.g., 'learnpython').",
+    ),
+    days: int = typer.Option(
+        30,
+        "--days",
+        "-d",
+        help="The number of past days to extract data for.",
+    ),
+    chunk_span: ChunkSpan = typer.Option(
+        ChunkSpan.MONTH, # Default value must be an Enum member
+        "--chunk",
         "-c",
-        "--color",
-        "--colour",
-        case_sensitive=False,
-        help="Color for print. If not specified then choice will be random.",
+        case_sensitive=False, # Allows user to type 'M' or 'D'
+        help="The time span for chunking output files.",
     ),
-    print_version: bool = typer.Option(
-        None,
-        "-v",
-        "--version",
-        callback=version_callback,
-        is_eager=True,
-        help="Prints the version of the ask-reddit package.",
-    ),
-) -> None:
-    """Print a greeting with a giving name."""
-    if color is None:
-        color = choice(list(Color))
+):
+    """
+    The main function to run the Reddit scraper CLI.
+    """
 
-    greeting: str = hello(name)
-    console.print(f"[bold {color}]{greeting}[/]")
+    # Setup Logging
+    log_filepath = os.getenv("LOG_FILEPATH", "logs/default_scraper.log")
+    setup_logging(log_filepath)
+
+    # Acknowledge Invocation and Parameters
+    typer.echo(f"Starting scraper with the following settings:")
+    typer.echo(f"  - Subreddit: r/{subreddit}")
+    typer.echo(f"  - Time Period: Last {days} days")
+    typer.echo(f"  - File Chunking: By { 'Month' if chunk_span == ChunkSpan.MONTH else 'Day' }")
+    logging.info(f"CLI started for r/{subreddit}, days={days}, chunk='{chunk_span}'")
+
+    # Obtain the reddit praw instance
+    reddit = create_praw_instance()
+    if not reddit:
+        logging.critical("Exiting due to failed Reddit authentication.")
+        raise typer.Exit(code=1)
+
+    # Instantiate the file manager responsible for persisting submissions to json
+    file_manager = create_file_manager(subreddit=subreddit)
+    if not file_manager:
+        logging.critical("Exiting due to failed FileManager instantiation.")
+        raise typer.Exit(code=1)
+
+    # Instantiate the scraper
+    RATE_LIMIT = int(os.getenv("REDDIT_RATE_LIMIT", 100))
+    TOLERANCE = int(os.getenv("ERROR_TOLERANCE", 5))
+    scraper = RedditScraper(scraper=reddit, subreddit=subreddit, days=days, chunk_span=chunk_span, filemanager=file_manager, rate_limit_per_minute=RATE_LIMIT, tolerance=TOLERANCE)
+    scraper.scrape()
+
+    logging.info("Scraping process finished.")
+    typer.echo("\nScraping complete!")
 
 
 if __name__ == "__main__":
