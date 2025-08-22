@@ -1,4 +1,4 @@
-#!/bin/env python3
+#!/usr/bin/env python3
 # -*- coding:utf-8 -*-
 # ================================================================================================ #
 # Project    : Ask Reddit                                                                          #
@@ -7,11 +7,11 @@
 # Filename   : /scraper/scrape.py                                                                  #
 # ------------------------------------------------------------------------------------------------ #
 # Author     : John James                                                                          #
-# Email      : john@variancexplained.com                                                           #
+# Email      : john.james.ai.studio@gmail.com                                                      #
 # URL        : https://github.com/john-james-ai/ask-reddit/                                        #
 # ------------------------------------------------------------------------------------------------ #
-# Created    : Saturday June 21st 2025 02:29:04 pm                                                 #
-# Modified   : Sunday June 22nd 2025 07:23:15 am                                                   #
+# Created    : Friday August 22nd 2025 02:40:33 pm                                                 #
+# Modified   : Friday August 22nd 2025 03:22:39 pm                                                 #
 # ------------------------------------------------------------------------------------------------ #
 # License    : MIT License                                                                         #
 # Copyright  : (c) 2025 John James                                                                 #
@@ -22,6 +22,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 import praw
+from praw.models import Comment, Submission
 from tqdm import tqdm
 
 from scraper.constants import BatchSpan
@@ -172,7 +173,7 @@ class RedditScraper:
         # Persist the batch to file.
         self._filemanager.write(data=current_batch_data, span=self._current_batch_span_str)
 
-    def _process_submission(self, submission: praw.models.Submission) -> Dict:
+    def _process_submission(self, submission: Submission) -> Dict:
         """Processes a single submission and its comments, returning a data dictionary."""
         self._n_submissions += 1
 
@@ -188,11 +189,17 @@ class RedditScraper:
         self._process_comments(submission, submission_data["comments"])
         return submission_data
 
-    def _process_comments(self, submission: praw.models.Submission, comments_list: List) -> None:
+    def _process_comments(self, submission: Submission, comments_list: List) -> None:
         """Fetches all comments for a submission and appends them to a provided list."""
+        # This is correct! It replaces the MoreComments objects with actual comments.
         submission.comments.replace_more(limit=None)
 
         for comment in submission.comments.list():
+            # This is the fix: Ensure we are only processing actual Comment objects.
+            if not isinstance(comment, Comment):
+                continue
+
+            # Now the linter knows `comment` is a Comment and has these attributes.
             if not comment.author or not comment.body:
                 continue
 
@@ -209,9 +216,12 @@ class RedditScraper:
         """Saves the final data batch and prints a summary of the job."""
         # Obtain duration as string and as seconds.
         end_dt = datetime.now()
-        duration = end_dt - self._start_dt
-        duration_sec = DateTime.get_seconds(td=duration)
-        duration_str = DateTime.format_timedelta(td=duration)
+        if isinstance(self._start_dt, datetime):
+            duration = end_dt - self._start_dt
+            duration_sec = DateTime.get_seconds(td=duration)
+            duration_str = DateTime.format_timedelta(td=duration)
+        else:
+            raise RuntimeError("Start time not set.")
 
         # Save the final batch and update the token count
         if final_batch_data:

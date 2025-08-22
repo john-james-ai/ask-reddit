@@ -1,4 +1,4 @@
-#!/bin/env python3
+#!/usr/bin/env python3
 # -*- coding:utf-8 -*-
 # ================================================================================================ #
 # Project    : Ask Reddit                                                                          #
@@ -10,13 +10,12 @@
 # Email      : john.james.ai.studio@gmail.com                                                      #
 # URL        : https://github.com/john-james-ai/ask-reddit/                                        #
 # ------------------------------------------------------------------------------------------------ #
-# Created    : Saturday June 21st 2025 07:42:33 pm                                                 #
-# Modified   : Sunday June 22nd 2025 06:48:22 am                                                   #
+# Created    : Friday August 22nd 2025 02:40:33 pm                                                 #
+# Modified   : Friday August 22nd 2025 03:22:05 pm                                                 #
 # ------------------------------------------------------------------------------------------------ #
 # License    : MIT License                                                                         #
 # Copyright  : (c) 2025 John James                                                                 #
 # ================================================================================================ #
-
 from __future__ import annotations
 
 from enum import Enum
@@ -50,6 +49,7 @@ class BatchSpan(Enum):
         fmt (str): The ``strftime`` compatible format string (e.g., '%Y-%m-%d').
     """
 
+    fmt: str
     DAY = ("d", "%Y-%m-%d")
     MONTH = ("m", "%Y-%m")
 

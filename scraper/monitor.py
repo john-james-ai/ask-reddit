@@ -1,4 +1,4 @@
-#!/bin/env python3
+#!/usr/bin/env python3
 # -*- coding:utf-8 -*-
 # ================================================================================================ #
 # Project    : Ask Reddit                                                                          #
@@ -10,13 +10,14 @@
 # Email      : john.james.ai.studio@gmail.com                                                      #
 # URL        : https://github.com/john-james-ai/ask-reddit/                                        #
 # ------------------------------------------------------------------------------------------------ #
-# Created    : Sunday June 22nd 2025 05:50:46 am                                                   #
-# Modified   : Sunday June 22nd 2025 07:19:19 am                                                   #
+# Created    : Friday August 22nd 2025 02:40:33 pm                                                 #
+# Modified   : Friday August 22nd 2025 03:22:26 pm                                                 #
 # ------------------------------------------------------------------------------------------------ #
 # License    : MIT License                                                                         #
 # Copyright  : (c) 2025 John James                                                                 #
 # ================================================================================================ #
 """Module responsible for resilience of the Scraper"""
+
 from typing import Dict
 
 import logging

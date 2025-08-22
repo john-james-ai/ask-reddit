@@ -1,4 +1,4 @@
-#!/bin/env python3
+#!/usr/bin/env python3
 # -*- coding:utf-8 -*-
 # ================================================================================================ #
 # Project    : Ask Reddit                                                                          #
@@ -10,13 +10,14 @@
 # Email      : john.james.ai.studio@gmail.com                                                      #
 # URL        : https://github.com/john-james-ai/ask-reddit/                                        #
 # ------------------------------------------------------------------------------------------------ #
-# Created    : Sunday June 22nd 2025 01:38:28 am                                                   #
-# Modified   : Sunday June 22nd 2025 03:33:55 am                                                   #
+# Created    : Friday August 22nd 2025 02:40:33 pm                                                 #
+# Modified   : Friday August 22nd 2025 03:22:19 pm                                                 #
 # ------------------------------------------------------------------------------------------------ #
 # License    : MIT License                                                                         #
 # Copyright  : (c) 2025 John James                                                                 #
 # ================================================================================================ #
 """Encapsulates the Generative AI Model"""
+
 from typing import List
 
 import json
@@ -29,6 +30,8 @@ from scraper.constants import DEFAULT_GENAI_MODEL
 
 # ------------------------------------------------------------------------------------------------ #
 load_dotenv()
+
+
 # ------------------------------------------------------------------------------------------------ #
 class GenAIModel:
     """Manages interactions with the Google Generative AI models.
@@ -37,6 +40,7 @@ class GenAIModel:
     model functionalities, such as token counting. It handles client initialization
     and model selection based on environment variables.
     """
+
     def __init__(self) -> None:
         api_key = os.getenv("GOOGLE_API_KEY")
         self._model = os.getenv("GENAI_MODEL", DEFAULT_GENAI_MODEL)
@@ -53,6 +57,9 @@ class GenAIModel:
             The total number of tokens in the serialized data as an integer.
         """
         # Serialize the data to be tokenized
-        serialized_data = json.dumps(data, indent=DEFAULT_GENAI_MODEL)
+        serialized_data = json.dumps(data)
         # Count the tokens
-        return self._client.models.count_tokens(model=self._model, contents=serialized_data).total_tokens
+        response = self._client.models.count_tokens(
+            model=self._model, contents=serialized_data
+        ).total_tokens
+        return getattr(response, "total_tokens", 0)
