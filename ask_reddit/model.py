@@ -4,14 +4,14 @@
 # Project    : Ask Reddit                                                                          #
 # Version    : 0.1.0                                                                               #
 # Python     : 3.13.5                                                                              #
-# Filename   : /scraper/model.py                                                                   #
+# Filename   : /ask_reddit/model.py                                                                #
 # ------------------------------------------------------------------------------------------------ #
 # Author     : John James                                                                          #
 # Email      : john.james.ai.studio@gmail.com                                                      #
 # URL        : https://github.com/john-james-ai/ask-reddit/                                        #
 # ------------------------------------------------------------------------------------------------ #
 # Created    : Friday August 22nd 2025 02:40:33 pm                                                 #
-# Modified   : Friday August 22nd 2025 03:22:19 pm                                                 #
+# Modified   : Friday August 22nd 2025 03:56:59 pm                                                 #
 # ------------------------------------------------------------------------------------------------ #
 # License    : MIT License                                                                         #
 # Copyright  : (c) 2025 John James                                                                 #
@@ -26,7 +26,7 @@ import os
 from dotenv import load_dotenv
 from google import genai
 
-from scraper.constants import DEFAULT_GENAI_MODEL
+from ask_reddit.constants import DEFAULT_GENAI_MODEL
 
 # ------------------------------------------------------------------------------------------------ #
 load_dotenv()

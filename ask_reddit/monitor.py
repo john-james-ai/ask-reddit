@@ -4,14 +4,14 @@
 # Project    : Ask Reddit                                                                          #
 # Version    : 0.1.0                                                                               #
 # Python     : 3.13.5                                                                              #
-# Filename   : /scraper/monitor.py                                                                 #
+# Filename   : /ask_reddit/monitor.py                                                              #
 # ------------------------------------------------------------------------------------------------ #
 # Author     : John James                                                                          #
 # Email      : john.james.ai.studio@gmail.com                                                      #
 # URL        : https://github.com/john-james-ai/ask-reddit/                                        #
 # ------------------------------------------------------------------------------------------------ #
 # Created    : Friday August 22nd 2025 02:40:33 pm                                                 #
-# Modified   : Friday August 22nd 2025 03:22:26 pm                                                 #
+# Modified   : Friday August 22nd 2025 03:56:59 pm                                                 #
 # ------------------------------------------------------------------------------------------------ #
 # License    : MIT License                                                                         #
 # Copyright  : (c) 2025 John James                                                                 #
@@ -24,7 +24,7 @@ import logging
 import time
 from enum import Enum
 
-from scraper.constants import (
+from ask_reddit.constants import (
     DEFAULT_FAILURE_THRESHOLD,
     DEFAULT_HALF_OPEN_FACTOR,
     DEFAULT_OPEN_FACTOR,

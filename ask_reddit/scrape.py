@@ -4,14 +4,14 @@
 # Project    : Ask Reddit                                                                          #
 # Version    : 0.1.0                                                                               #
 # Python     : 3.13.5                                                                              #
-# Filename   : /scraper/scrape.py                                                                  #
+# Filename   : /ask_reddit/scrape.py                                                               #
 # ------------------------------------------------------------------------------------------------ #
 # Author     : John James                                                                          #
 # Email      : john.james.ai.studio@gmail.com                                                      #
 # URL        : https://github.com/john-james-ai/ask-reddit/                                        #
 # ------------------------------------------------------------------------------------------------ #
 # Created    : Friday August 22nd 2025 02:40:33 pm                                                 #
-# Modified   : Friday August 22nd 2025 03:22:39 pm                                                 #
+# Modified   : Friday August 22nd 2025 03:56:59 pm                                                 #
 # ------------------------------------------------------------------------------------------------ #
 # License    : MIT License                                                                         #
 # Copyright  : (c) 2025 John James                                                                 #
@@ -25,12 +25,12 @@ import praw
 from praw.models import Comment, Submission
 from tqdm import tqdm
 
-from scraper.constants import BatchSpan
-from scraper.date import DateTime
-from scraper.model import GenAIModel
-from scraper.monitor import CircuitBreaker
-from scraper.persist import FileManager
-from scraper.print import Printer
+from ask_reddit.constants import BatchSpan
+from ask_reddit.date import DateTime
+from ask_reddit.model import GenAIModel
+from ask_reddit.monitor import CircuitBreaker
+from ask_reddit.persist import FileManager
+from ask_reddit.print import Printer
 
 # ------------------------------------------------------------------------------------------------ #
 logger = logging.getLogger(__name__)

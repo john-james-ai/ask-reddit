@@ -4,14 +4,14 @@
 # Project    : Ask Reddit                                                                          #
 # Version    : 0.1.0                                                                               #
 # Python     : 3.13.5                                                                              #
-# Filename   : /scraper/persist.py                                                                 #
+# Filename   : /ask_reddit/persist.py                                                              #
 # ------------------------------------------------------------------------------------------------ #
 # Author     : John James                                                                          #
 # Email      : john@variancexplained.com                                                           #
 # URL        : https://github.com/john-james-ai/ask-reddit/                                        #
 # ------------------------------------------------------------------------------------------------ #
 # Created    : Saturday June 21st 2025 02:41:05 pm                                                 #
-# Modified   : Sunday June 22nd 2025 04:41:08 am                                                   #
+# Modified   : Friday August 22nd 2025 03:56:59 pm                                                 #
 # ------------------------------------------------------------------------------------------------ #
 # License    : MIT License                                                                         #
 # Copyright  : (c) 2025 John James                                                                 #
@@ -23,7 +23,7 @@ import logging
 import os
 from datetime import datetime
 
-from scraper.constants import DEFAULT_JSON_INDENT
+from ask_reddit.constants import DEFAULT_JSON_INDENT
 
 # ------------------------------------------------------------------------------------------------ #
 logger = logging.getLogger(__name__)

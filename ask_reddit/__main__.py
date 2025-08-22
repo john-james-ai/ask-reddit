@@ -4,14 +4,14 @@
 # Project    : Ask Reddit                                                                          #
 # Version    : 0.1.0                                                                               #
 # Python     : 3.13.5                                                                              #
-# Filename   : /scraper/__main__.py                                                                #
+# Filename   : /ask_reddit/__main__.py                                                             #
 # ------------------------------------------------------------------------------------------------ #
 # Author     : John James                                                                          #
 # Email      : john@variancexplained.com                                                           #
 # URL        : https://github.com/john-james-ai/ask-reddit/                                        #
 # ------------------------------------------------------------------------------------------------ #
 # Created    : Saturday June 21st 2025 12:28:41 pm                                                 #
-# Modified   : Sunday June 22nd 2025 07:16:15 am                                                   #
+# Modified   : Friday August 22nd 2025 03:56:59 pm                                                 #
 # ------------------------------------------------------------------------------------------------ #
 # License    : MIT License                                                                         #
 # Copyright  : (c) 2025 John James                                                                 #
@@ -27,12 +27,12 @@ import praw
 import typer
 from dotenv import load_dotenv
 
-from scraper.constants import BatchSpan
-from scraper.model import GenAIModel
-from scraper.monitor import CircuitBreaker
-from scraper.persist import FileManager
-from scraper.print import Printer
-from scraper.scrape import RedditScraper
+from ask_reddit.constants import BatchSpan
+from ask_reddit.model import GenAIModel
+from ask_reddit.monitor import CircuitBreaker
+from ask_reddit.persist import FileManager
+from ask_reddit.print import Printer
+from ask_reddit.scrape import RedditScraper
 
 # ------------------------------------------------------------------------------------------------ #
 load_dotenv()
