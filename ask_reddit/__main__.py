@@ -11,7 +11,7 @@
 # URL        : https://github.com/john-james-ai/ask-reddit/                                        #
 # ------------------------------------------------------------------------------------------------ #
 # Created    : Saturday June 21st 2025 12:28:41 pm                                                 #
-# Modified   : Friday August 22nd 2025 03:56:59 pm                                                 #
+# Modified   : Friday August 29th 2025 12:54:46 am                                                 #
 # ------------------------------------------------------------------------------------------------ #
 # License    : MIT License                                                                         #
 # Copyright  : (c) 2025 John James                                                                 #
@@ -192,6 +192,8 @@ def main(
         filemanager=file_manager,
     )
     scraper.scrape()
+
+    # Upload the json to google drive
 
 
 if __name__ == "__main__":

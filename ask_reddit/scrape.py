@@ -11,14 +11,16 @@
 # URL        : https://github.com/john-james-ai/ask-reddit/                                        #
 # ------------------------------------------------------------------------------------------------ #
 # Created    : Friday August 22nd 2025 02:40:33 pm                                                 #
-# Modified   : Friday August 22nd 2025 03:56:59 pm                                                 #
+# Modified   : Friday August 29th 2025 12:54:14 am                                                 #
 # ------------------------------------------------------------------------------------------------ #
 # License    : MIT License                                                                         #
 # Copyright  : (c) 2025 John James                                                                 #
 # ================================================================================================ #
+"""Scrape Module"""
 from typing import Dict, List
 
 import logging
+import os
 from datetime import datetime, timedelta, timezone
 
 import praw
@@ -27,6 +29,7 @@ from tqdm import tqdm
 
 from ask_reddit.constants import BatchSpan
 from ask_reddit.date import DateTime
+from ask_reddit.drive import upload_to_drive
 from ask_reddit.model import GenAIModel
 from ask_reddit.monitor import CircuitBreaker
 from ask_reddit.persist import FileManager
@@ -171,7 +174,13 @@ class RedditScraper:
         # Count number of tokens
         self._n_tokens += self._model.count_tokens(data=current_batch_data)
         # Persist the batch to file.
-        self._filemanager.write(data=current_batch_data, span=self._current_batch_span_str)
+        filepath = self._filemanager.write(
+            data=current_batch_data, span=self._current_batch_span_str
+        )
+
+        # Save file to google drive.
+        filename = os.path.basename(filepath)
+        upload_to_drive(file_path=filepath, file_name=filename)
 
     def _process_submission(self, submission: Submission) -> Dict:
         """Processes a single submission and its comments, returning a data dictionary."""

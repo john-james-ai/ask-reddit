@@ -67,7 +67,7 @@ REDDIT_PASSWORD="YOUR_REDDIT_PASSWORD"
 
 # --- Google Generative AI Configuration ---
 GOOGLE_API_KEY="YOUR_GOOGLE_API_KEY_HERE"
-GENAI_MODEL="gemini-pro"
+GENAI_MODEL="gemini-2.5-flash"
 
 # --- File & Data Configuration ---
 FILE_LOCATION="data/"

@@ -11,7 +11,7 @@
 # URL        : https://github.com/john-james-ai/ask-reddit/                                        #
 # ------------------------------------------------------------------------------------------------ #
 # Created    : Saturday June 21st 2025 02:41:05 pm                                                 #
-# Modified   : Friday August 22nd 2025 03:56:59 pm                                                 #
+# Modified   : Friday August 29th 2025 12:47:07 am                                                 #
 # ------------------------------------------------------------------------------------------------ #
 # License    : MIT License                                                                         #
 # Copyright  : (c) 2025 John James                                                                 #
@@ -79,7 +79,7 @@ class FileManager:
             data = json.load(json_file)
             return data
 
-    def write(self, data: list, span: str) -> None:
+    def write(self, data: list, span: str) -> str:
         """Writes data to a specified JSON file.
 
         Serializes the provided list of data into a JSON formatted string and
@@ -91,6 +91,8 @@ class FileManager:
             span (str): A specific identifier for the file, typically a
                 date string like 'YYYY-MM' or a keyword, used to create the
                 filename.
+
+        Returns: (str) Returns the filepath
         """
         filepath = self.create_filepath(span=span)
 
@@ -98,6 +100,8 @@ class FileManager:
         with open(filepath, "w", encoding="utf-8") as json_file:
             logger.info(f"Saving final data batch for '{span}'.")
             json.dump(data, json_file, indent=DEFAULT_JSON_INDENT, ensure_ascii=False)
+
+        return filepath
 
     def create_filepath(self, span: str) -> str:
         """Constructs a standardized file path and name.

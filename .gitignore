@@ -14,6 +14,9 @@ Icon
 # Thumbnails
 ._*
 
+# Google Credentials
+credentials.*
+
 # Personal Notes
 notes/
 
