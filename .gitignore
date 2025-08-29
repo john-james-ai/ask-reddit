@@ -16,6 +16,7 @@ Icon
 
 # Google Credentials
 credentials.*
+token.json
 
 # Personal Notes
 notes/

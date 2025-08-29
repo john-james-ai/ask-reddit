@@ -11,7 +11,7 @@
 # URL        : https://github.com/john-james-ai/ask-reddit/                                        #
 # ------------------------------------------------------------------------------------------------ #
 # Created    : Saturday June 21st 2025 12:28:41 pm                                                 #
-# Modified   : Friday August 29th 2025 12:54:46 am                                                 #
+# Modified   : Friday August 29th 2025 05:29:55 am                                                 #
 # ------------------------------------------------------------------------------------------------ #
 # License    : MIT License                                                                         #
 # Copyright  : (c) 2025 John James                                                                 #
@@ -28,6 +28,7 @@ import typer
 from dotenv import load_dotenv
 
 from ask_reddit.constants import BatchSpan
+from ask_reddit.drive import GDriveUploader
 from ask_reddit.model import GenAIModel
 from ask_reddit.monitor import CircuitBreaker
 from ask_reddit.persist import FileManager
@@ -37,7 +38,7 @@ from ask_reddit.scrape import RedditScraper
 # ------------------------------------------------------------------------------------------------ #
 load_dotenv()
 # ------------------------------------------------------------------------------------------------ #
-
+logger = logging.getLogger(__name__)
 
 # --- Typer App Initialization ---
 # This creates the main application object.
@@ -60,8 +61,7 @@ def setup_logging(log_filepath: str) -> None:
     log_dir = os.path.dirname(log_filepath)
     os.makedirs(log_dir, exist_ok=True)
 
-    # Get the root logger
-    logger = logging.getLogger()
+    # Set log level
     logger.setLevel(logging.INFO)
 
     # Prevent handlers from being added multiple times
@@ -86,7 +86,7 @@ def setup_logging(log_filepath: str) -> None:
         console_handler.setFormatter(formatter)
         logger.addHandler(console_handler)
 
-    logging.info("Logging has been configured successfully.")
+    logger.info("Logging has been configured successfully.")
 
 
 def create_praw_instance() -> Optional[praw.Reddit]:
@@ -107,7 +107,7 @@ def create_praw_instance() -> Optional[praw.Reddit]:
             password=os.getenv("REDDIT_PASSWORD"),
         )
         # Validate credentials by trying to access user data
-        logging.info(f"Successfully authenticated as Reddit user: {reddit.user.me()}")
+        logger.info(f"Successfully authenticated as Reddit user: {reddit.user.me()}")
         return reddit
     except Exception as e:
         logging.error(f"Failed to create PRAW instance: {e}")
@@ -145,9 +145,12 @@ def main(
     batch_span: BatchSpan = typer.Option(
         BatchSpan.MONTH,  # Default value must be an Enum member
         "--batch",
-        "-c",
+        "-b",
         case_sensitive=False,  # Allows user to type 'M' or 'D'
         help="The time span for batch output files.",
+    ),
+    google_drive: bool = typer.Option(
+        False, "--google-drive", "-g", help="Upload the scraped files to Google Drive."
     ),
 ):
     """
@@ -159,7 +162,7 @@ def main(
     setup_logging(log_filepath)
 
     # Acknowledge command line invocation and parameters
-    logging.info(f"CLI started for r/{subreddit}, days={days}, batch='{batch_span}'")
+    logger.info(f"CLI started for r/{subreddit}, days={days}, batch='{batch_span}'")
 
     # Obtain the reddit praw instance
     reddit = create_praw_instance()
@@ -191,9 +194,26 @@ def main(
         batch_span=batch_span,
         filemanager=file_manager,
     )
+    # Scrape subreddit submissions
     scraper.scrape()
+    # Get the list of the filepaths persisted.
+    filepaths = scraper.filepaths
 
-    # Upload the json to google drive
+    # Handle Google Drive file upload if requested
+    if google_drive:
+        if len(filepaths) > 0:
+            folder_id = os.getenv(f"GOOGLE_DRIVE_FOLDER_ID")
+            token_filepath = os.getenv("GOOGLE_TOKENS_JSON_FILEPATH")
+            credentials_filepath = os.getenv("GOOGLE_CREDENTIALS_FILEPATH")
+            gdrive = GDriveUploader(
+                token_filepath=token_filepath,
+                credentials_filepath=credentials_filepath,
+                folder_id=folder_id,
+            )
+            gdrive.upload(filepaths=filepaths)
+        else:
+            msg = "No files to upload to Google Drive"
+            logger.info(msg)
 
 
 if __name__ == "__main__":

@@ -11,7 +11,7 @@
 # URL        : https://github.com/john-james-ai/ask-reddit/                                        #
 # ------------------------------------------------------------------------------------------------ #
 # Created    : Friday August 22nd 2025 02:40:33 pm                                                 #
-# Modified   : Friday August 29th 2025 12:54:14 am                                                 #
+# Modified   : Friday August 29th 2025 05:46:49 am                                                 #
 # ------------------------------------------------------------------------------------------------ #
 # License    : MIT License                                                                         #
 # Copyright  : (c) 2025 John James                                                                 #
@@ -20,7 +20,6 @@
 from typing import Dict, List
 
 import logging
-import os
 from datetime import datetime, timedelta, timezone
 
 import praw
@@ -29,7 +28,6 @@ from tqdm import tqdm
 
 from ask_reddit.constants import BatchSpan
 from ask_reddit.date import DateTime
-from ask_reddit.drive import upload_to_drive
 from ask_reddit.model import GenAIModel
 from ask_reddit.monitor import CircuitBreaker
 from ask_reddit.persist import FileManager
@@ -87,9 +85,15 @@ class RedditScraper:
         self._current_batch_span_str = ""
         self._start_dt = None
 
+        self._filepaths: List = []
+
         # Set timestamp stop condition
         now_utc = datetime.now(timezone.utc)
         self._stop_utc = now_utc - timedelta(days=self._days)
+
+    @property
+    def filepaths(self) -> List:
+        return self._filepaths
 
     def scrape(self) -> None:
         """
@@ -121,7 +125,8 @@ class RedditScraper:
                 submission_span_str = submission_dt.strftime(self._batch_span.fmt)
 
                 # If we've entered a new month/day, save the previous batch's data
-                # The check `self._current_batch_span_str != ""` ensures we don't write an empty file on the first run.
+                # The check `self._current_batch_span_str != ""` ensures we don't
+                # write an empty file on the first run.
                 if (
                     submission_span_str != self._current_batch_span_str
                     and self._current_batch_span_str != ""
@@ -178,9 +183,8 @@ class RedditScraper:
             data=current_batch_data, span=self._current_batch_span_str
         )
 
-        # Save file to google drive.
-        filename = os.path.basename(filepath)
-        upload_to_drive(file_path=filepath, file_name=filename)
+        # Add the filepath to the filepaths property
+        self._filepaths.append(filepath)
 
     def _process_submission(self, submission: Submission) -> Dict:
         """Processes a single submission and its comments, returning a data dictionary."""
@@ -235,7 +239,10 @@ class RedditScraper:
         # Save the final batch and update the token count
         if final_batch_data:
             self._n_batches += 1
-            self._filemanager.write(data=final_batch_data, span=self._current_batch_span_str)
+            filepath = self._filemanager.write(
+                data=final_batch_data, span=self._current_batch_span_str
+            )
+            self._filepaths.append(filepath)
             # Count number of tokens in final batch and add to token count
             self._n_tokens += self._model.count_tokens(data=final_batch_data)
 

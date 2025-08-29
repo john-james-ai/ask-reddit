@@ -11,12 +11,32 @@
 # URL        : https://github.com/john-james-ai/ask-reddit/                                        #
 # ------------------------------------------------------------------------------------------------ #
 # Created    : Friday August 29th 2025 12:03:06 am                                                 #
-# Modified   : Friday August 29th 2025 12:53:46 am                                                 #
+# Modified   : Friday August 29th 2025 05:20:07 am                                                 #
 # ------------------------------------------------------------------------------------------------ #
 # License    : MIT License                                                                         #
 # Copyright  : (c) 2025 John James                                                                 #
 # ================================================================================================ #
-from typing import Union
+from typing import Any, List, Optional, Union
+
+import logging
+import os
+from pathlib import Path
+
+from google.auth.transport.requests import Request
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import InstalledAppFlow
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaFileUpload
+
+# ------------------------------------------------------------------------------------------------ #
+# If modifying these scopes, delete the file token.json.
+SCOPES = ["https://www.googleapis.com/auth/drive.file"]
+# ------------------------------------------------------------------------------------------------ #
+logger = logging.getLogger(__name__)
+
+
+# ------------------------------------------------------------------------------------------------ #
+from typing import Any, List, Optional, Union
 
 import os
 from pathlib import Path
@@ -29,53 +49,97 @@ from googleapiclient.http import MediaFileUpload
 
 # If modifying these scopes, delete the file token.json.
 SCOPES = ["https://www.googleapis.com/auth/drive.file"]
-FOLDER_ID = "RedditAnalysis"
 
 
-def upload_to_drive(file_path: Union[str, Path], file_name: str, folder_id=None):
-    """Uploads a file to Google Drive in a specific folder."""
-    creds = None
-    folder_id = folder_id or FOLDER_ID
-    # The file token.json stores the user's access and refresh tokens, and is
-    # created automatically when the authorization flow completes for the first
-    # time.
-    if os.path.exists("token.json"):
-        creds = Credentials.from_authorized_user_file("token.json", SCOPES)
-    # If there are no (valid) credentials available, let the user log in.
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
-            flow = InstalledAppFlow.from_client_secrets_file("credentials.json", SCOPES)
-            creds = flow.run_local_server(port=0)
-        # Save the credentials for the next run
-        with open("token.json", "w") as token:
-            token.write(creds.to_json())
+class GDriveUploader:
+    """
+    A class to handle authentication and file uploads to Google Drive.
 
-    try:
-        service = build("drive", "v3", credentials=creds)
+    This class provides a clean interface for managing the Google Drive API
+    service connection and uploading one or more files to a designated folder.
+    It handles authentication and token management internally, ensuring the
+    service is built only when needed.
+    """
 
-        file_metadata = {
-            "name": file_name,
-            # If you have a specific folder, add its ID here
-            "parents": [folder_id] if folder_id else [],
-        }
-        media = MediaFileUpload(file_path, mimetype="application/json")
+    def __init__(
+        self,
+        token_filepath: Union[str, Path],
+        credentials_filepath: Union[str, Path],
+        folder_id: Optional[str] = None,
+    ) -> None:
+        self._folder_id = folder_id
+        self._token_filepath = token_filepath
+        self._credentials_filepath = credentials_filepath
+        self._service = None
 
-        file = service.files().create(body=file_metadata, media_body=media, fields="id").execute()
-        print(f"File '{file_name}' uploaded successfully with File ID: {file.get('id')}")
-        return file.get("id")
+    def build_service(self) -> Any:
+        """
+        Handles authentication and returns a Google Drive API service object.
 
-    except Exception as e:
-        print(f"An error occurred: {e}")
-        return None
+        Checks for an existing 'token.json', refreshes it if expired, or
+        initiates a new OAuth2 flow if it doesn't exist. The built service
+        object is stored as a private attribute.
 
+        Returns:
+            Any: The authorized and built Google Drive API service object.
+        """
+        creds = None
+        if os.path.exists(self._token_filepath):
+            creds = Credentials.from_authorized_user_file(self._token_filepath, SCOPES)
+        if not creds or not creds.valid:
+            if creds and creds.expired and creds.refresh_token:
+                creds.refresh(Request())
+            else:
+                flow = InstalledAppFlow.from_client_secrets_file(self._credentials_filepath, SCOPES)
+                creds = flow.run_local_server(port=0)
+            with open(self._token_filepath, "w") as token:
+                token.write(creds.to_json())
+        try:
+            self._service = build("drive", "v3", credentials=creds)
+            return self._service
+        except Exception as e:
+            # Re-raising the exception is a better practice for larger applications:
+            msg = f"Exception occurred while building Google Drive service.\n{e}"
+            logger.error(msg)
+            raise
 
-# --- How to use it in your main script ---
-# 1. After you save your JSON data to a local file...
-#    with open('reddit_data.json', 'w') as f:
-#        json.dump(data, f)
+    def upload(self, filepaths: Union[str, List]) -> None:
+        """
+        Uploads a file or list of files to the designated Google Drive folder.
 
-# 2. Call the upload function.
-#    DRIVE_FOLDER_ID = "YOUR_FOLDER_ID_HERE" # Optional, but recommended
-#    upload_to_drive('reddit_data.json', 'reddit_data.json', DRIVE_FOLDER_ID)
+        The method handles the core upload logic, including type-checking the
+        input and handling per-file errors gracefully. It ensures the API service
+        is built only once for the lifetime of the object.
+
+        Args:
+            filepaths (Union[str, List]): A list of filepaths or a string for
+                a single filepath to be uploaded to Google Drive.
+        """
+        if self._service is None:
+            self.build_service()
+
+        # Corrects the bug: ensures filepaths is always a list of strings
+        if isinstance(filepaths, str):
+            filepaths = [filepaths]
+
+        for filepath in filepaths:
+            filename = os.path.basename(filepath)
+            file_metadata = {
+                "name": filename,
+                "parents": [self._folder_id] if self._folder_id else [],
+            }
+            try:
+                media = MediaFileUpload(filepath, mimetype="application/json")
+                file = (
+                    self._service.files()  # type: ignore[]
+                    .create(body=file_metadata, media_body=media, fields="id")
+                    .execute()
+                )
+                msg = f"File '{filename}' uploaded successfully with File ID: {file.get('id')}"
+                logger.info(msg)
+                print(msg)
+            except Exception as e:
+                msg = f"Exception occurred while uploading {filename}.\n{e}"
+                logger.error(msg)
+                # Corrects the bug: logs the error and continues the loop
+                continue

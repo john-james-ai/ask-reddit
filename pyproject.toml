@@ -122,14 +122,22 @@ warn_unused_ignores = true
 # Directories that are not visited by pytest collector:
 norecursedirs =["hooks", "*.egg", ".eggs", "dist", "build", "docs", ".tox", ".git", "__pycache__"]
 doctest_optionflags = ["NUMBER", "NORMALIZE_WHITESPACE", "IGNORE_EXCEPTION_DETAIL"]
+addopts = """\
+    --cov ask_reddit \
+    --cov tests \
+    --cov-report term-missing \
+    --no-cov-on-fail \
+"""
+filterwarnings = [
+    "ignore::pytest.PytestCollectionWarning",
+    "ignore::pytest.PytestUnknownMarkWarning",
+    ]
 
-# Extra options:
-addopts = [
-  "--strict-markers",
-  "--tb=short",
-  "--doctest-modules",
-  "--doctest-continue-on-failure",
+log_cli_level = "DEBUG"
+testpaths = [
+  "tests",
 ]
+
 
 [tool.coverage.run]
 source = ["tests"]

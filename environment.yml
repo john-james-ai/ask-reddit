@@ -99,5 +99,17 @@ dependencies:
   - yarl=1.20.1=py313h8060acc_0
   - zstandard=0.23.0=py313h536fd9c_2
   - pip:
+      - google-api-core==2.25.1
+      - google-api-python-client==2.179.0
+      - google-auth-httplib2==0.2.0
+      - google-auth-oauthlib==1.2.2
+      - googleapis-common-protos==1.70.0
+      - httplib2==0.22.0
+      - oauthlib==3.3.1
+      - proto-plus==1.26.1
+      - protobuf==6.32.0
+      - pyparsing==3.2.3
       - python-dotenv==1.1.0
+      - requests-oauthlib==2.0.0
+      - uritemplate==4.2.0
 prefix: /home/john/anaconda3/envs/ask_reddit
