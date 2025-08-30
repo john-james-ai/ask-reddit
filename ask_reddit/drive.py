@@ -11,12 +11,12 @@
 # URL        : https://github.com/john-james-ai/ask-reddit/                                        #
 # ------------------------------------------------------------------------------------------------ #
 # Created    : Friday August 29th 2025 12:03:06 am                                                 #
-# Modified   : Friday August 29th 2025 05:20:07 am                                                 #
+# Modified   : Saturday August 30th 2025 02:14:11 pm                                               #
 # ------------------------------------------------------------------------------------------------ #
 # License    : MIT License                                                                         #
 # Copyright  : (c) 2025 John James                                                                 #
 # ================================================================================================ #
-from typing import Any, List, Optional, Union
+from typing import Any, Optional, Union
 
 import logging
 import os
@@ -33,22 +33,7 @@ from googleapiclient.http import MediaFileUpload
 SCOPES = ["https://www.googleapis.com/auth/drive.file"]
 # ------------------------------------------------------------------------------------------------ #
 logger = logging.getLogger(__name__)
-
-
 # ------------------------------------------------------------------------------------------------ #
-from typing import Any, List, Optional, Union
-
-import os
-from pathlib import Path
-
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload
-
-# If modifying these scopes, delete the file token.json.
-SCOPES = ["https://www.googleapis.com/auth/drive.file"]
 
 
 class GDriveUploader:
@@ -103,7 +88,7 @@ class GDriveUploader:
             logger.error(msg)
             raise
 
-    def upload(self, filepaths: Union[str, List]) -> None:
+    def upload(self, filepath: Union[str, Path]) -> None:
         """
         Uploads a file or list of files to the designated Google Drive folder.
 
@@ -112,34 +97,26 @@ class GDriveUploader:
         is built only once for the lifetime of the object.
 
         Args:
-            filepaths (Union[str, List]): A list of filepaths or a string for
-                a single filepath to be uploaded to Google Drive.
+            filepath (Union[str, Path]): The path to the file to be uploaded
+                to Google Drive.
         """
         if self._service is None:
             self.build_service()
 
-        # Corrects the bug: ensures filepaths is always a list of strings
-        if isinstance(filepaths, str):
-            filepaths = [filepaths]
-
-        for filepath in filepaths:
-            filename = os.path.basename(filepath)
-            file_metadata = {
-                "name": filename,
-                "parents": [self._folder_id] if self._folder_id else [],
-            }
-            try:
-                media = MediaFileUpload(filepath, mimetype="application/json")
-                file = (
-                    self._service.files()  # type: ignore[]
-                    .create(body=file_metadata, media_body=media, fields="id")
-                    .execute()
-                )
-                msg = f"File '{filename}' uploaded successfully with File ID: {file.get('id')}"
-                logger.info(msg)
-                print(msg)
-            except Exception as e:
-                msg = f"Exception occurred while uploading {filename}.\n{e}"
-                logger.error(msg)
-                # Corrects the bug: logs the error and continues the loop
-                continue
+        filename = os.path.basename(filepath)
+        file_metadata = {
+            "name": filename,
+            "parents": [self._folder_id] if self._folder_id else [],
+        }
+        try:
+            media = MediaFileUpload(filepath, mimetype="application/json")
+            file = (
+                self._service.files()  # type: ignore[]
+                .create(body=file_metadata, media_body=media, fields="id")
+                .execute()
+            )
+            msg = f"File '{filename}' uploaded successfully with File ID: {file.get('id')}"
+            print(msg)
+        except Exception as e:
+            msg = f"Exception occurred while uploading {filename}.\n{e}"
+            logger.error(msg)
