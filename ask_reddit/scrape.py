@@ -11,7 +11,7 @@
 # URL        : https://github.com/john-james-ai/ask-reddit/                                        #
 # ------------------------------------------------------------------------------------------------ #
 # Created    : Friday August 22nd 2025 02:40:33 pm                                                 #
-# Modified   : Saturday August 30th 2025 02:13:51 pm                                               #
+# Modified   : Saturday August 30th 2025 03:36:02 pm                                               #
 # ------------------------------------------------------------------------------------------------ #
 # License    : MIT License                                                                         #
 # Copyright  : (c) 2025 John James                                                                 #
@@ -135,7 +135,8 @@ class RedditScraper:
         pbar.close()
         # Save the file
         if len(submissions) > 0:
-            self._filepath = self._filemanager.write(data=submissions, topic=self._subreddit)
+            name = self._format_name()
+            self._filepath = self._filemanager.write(data=submissions, name=name)
         else:
             msg = f"No submissions match the criteria"
             logger.info(msg)
@@ -165,6 +166,8 @@ class RedditScraper:
             "title": submission.title,
             "author": submission.author.name if submission.author else "[deleted]",
             "selftext": submission.selftext,
+            "score": submission.score,
+            "url": submission.url,
             "comments": [],
         }
 
@@ -196,11 +199,17 @@ class RedditScraper:
                 continue
 
             self._n_comments += 1
+
+            # Extract and format the comment url
+            relative_url = comment.permalink
+            full_url = "https://www.reddit.com" + relative_url
+
             comments_list.append(
                 {
                     "comment_id": f"t1_{comment.id}",
                     "author": comment.author.name,
                     "body": comment.body,
+                    "url": full_url,
                 }
             )
 
@@ -239,3 +248,6 @@ class RedditScraper:
         print(f"{'='*80}\n")
 
         logger.info("Scraping job finished successfully.")
+
+    def _format_name(self) -> str:
+        return f"{self._subreddit}_{self._days}-days_{self._n_submissions}-submissions_{self._n_comments}-comments"

@@ -11,7 +11,7 @@
 # URL        : https://github.com/john-james-ai/ask-reddit/                                        #
 # ------------------------------------------------------------------------------------------------ #
 # Created    : Saturday June 21st 2025 02:41:05 pm                                                 #
-# Modified   : Saturday August 30th 2025 02:43:29 pm                                               #
+# Modified   : Saturday August 30th 2025 02:49:44 pm                                               #
 # ------------------------------------------------------------------------------------------------ #
 # License    : MIT License                                                                         #
 # Copyright  : (c) 2025 John James                                                                 #
@@ -52,14 +52,14 @@ class FileManager:
         # Ensure the target directory exists
         os.makedirs(self._file_location, exist_ok=True)
 
-    def read(self, topic: str) -> List[Dict[str, Any]]:
+    def read(self, name: str) -> List[Dict[str, Any]]:
         """Reads and parses data from a specified JSON file.
 
         Constructs the file path using the provided span and reads the entire
         contents of the JSON file into a Python list of dictionaries.
 
         Args:
-            topic (str): The topic for the file to be read.
+            naem (str): The name for the file to be read.
 
         Returns:
             list: A list of dictionaries containing the data from the JSON file.
@@ -68,13 +68,13 @@ class FileManager:
             FileNotFoundError: If the file at the constructed path does not exist.
             json.JSONDecodeError: If the file content is not valid JSON.
         """
-        filepath = self._create_filepath(topic=topic)
+        filepath = self._create_filepath(name=name)
 
         with open(filepath, "r", encoding="utf-8") as json_file:
             data = json.load(json_file)
             return data
 
-    def write(self, data: list, topic: str) -> str:
+    def write(self, data: list, name: str) -> str:
         """Writes data to a specified JSON file.
 
         Serializes the provided list of data into a JSON formatted string and
@@ -83,42 +83,38 @@ class FileManager:
 
         Args:
             data (list): The list of serializable data (e.g., dicts) to write.
-            topic (str): The topic of the data to be written.
+            name (str): The name of the file.
 
         Returns: (str) Returns the filepath
         """
-        filepath = self._create_filepath(topic=topic)
+        filepath = self._create_filepath(name=name)
 
         # Open the file in write mode and save as json
         with open(filepath, "w", encoding="utf-8") as json_file:
-            logger.info(f"Saving data for '{topic}'.")
+            logger.info(f"Saving data for '{name}'.")
             json.dump(data, json_file, indent=DEFAULT_JSON_INDENT, ensure_ascii=False)
 
         return filepath
 
-    def _create_filepath(self, topic: str) -> str:
+    def _create_filepath(self, name: str) -> str:
         """Constructs a standardized file path and name.
 
-        Combines the source, topic, span, and an optional timestamp to create
+        Combines the source, name, and timestamp to create
         a descriptive and unique filename. It then joins this filename with the
         base file location directory.
 
         Args:
-            span (str): A specific identifier for the file, such as a
-                date string ('YYYY-MM') or a keyword.
+            name (str): Name for the file to be included in the filepath.
 
         Returns:
             str: The complete, absolute or relative path for the file.
         """
         dt = ""
-        # Note: This logic assumes if a timestamp is used for writing,
-        # the same logic must be used for reading to find the file.
-        # A fixed span like 'YYYY-MM' is often more reliable for reads.
         if self._timestamp:
             dt = datetime.now(timezone.utc).strftime("%Y-%m-%d_%H-%M-%S")
 
         # Filter out the empty string from dt if timestamp is false
-        filename_parts = [self._source, topic, dt]
+        filename_parts = [self._source, name, dt]
         filename = "-".join(filter(None, filename_parts)) + ".json"
 
         filepath = os.path.join(self._file_location, filename)
