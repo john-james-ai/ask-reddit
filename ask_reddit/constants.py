@@ -4,14 +4,14 @@
 # Project    : Ask Reddit                                                                          #
 # Version    : 0.1.0                                                                               #
 # Python     : 3.13.5                                                                              #
-# Filename   : /scraper/constants.py                                                               #
+# Filename   : /ask_reddit/constants.py                                                            #
 # ------------------------------------------------------------------------------------------------ #
 # Author     : John James                                                                          #
 # Email      : john.james.ai.studio@gmail.com                                                      #
 # URL        : https://github.com/john-james-ai/ask-reddit/                                        #
 # ------------------------------------------------------------------------------------------------ #
 # Created    : Friday August 22nd 2025 02:40:33 pm                                                 #
-# Modified   : Friday August 22nd 2025 03:22:05 pm                                                 #
+# Modified   : Wednesday October 1st 2025 11:14:58 pm                                              #
 # ------------------------------------------------------------------------------------------------ #
 # License    : MIT License                                                                         #
 # Copyright  : (c) 2025 John James                                                                 #

@@ -11,22 +11,22 @@
 # URL        : https://github.com/john-james-ai/ask-reddit/                                        #
 # ------------------------------------------------------------------------------------------------ #
 # Created    : Friday August 22nd 2025 02:40:33 pm                                                 #
-# Modified   : Saturday August 30th 2025 03:36:02 pm                                               #
+# Modified   : Wednesday October 1st 2025 11:18:18 pm                                              #
 # ------------------------------------------------------------------------------------------------ #
 # License    : MIT License                                                                         #
 # Copyright  : (c) 2025 John James                                                                 #
 # ================================================================================================ #
 """Scrape Module"""
-from typing import Dict, List, Union
+from typing import Dict, List
 
 import logging
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 
 import praw
 from praw.models import Comment, Submission
 from tqdm import tqdm
 
+from ask_reddit.constants import BatchSpan
 from ask_reddit.date import DateTime
 from ask_reddit.model import GenAIModel
 from ask_reddit.monitor import CircuitBreaker
@@ -62,7 +62,9 @@ class RedditScraper:
         circuit_breaker: CircuitBreaker,
         subreddit: str,
         days: int,
+        batch_span: BatchSpan,
         filemanager: FileManager,
+        rate_limit_per_minute: int = 85,
         tolerance: int = 5,
     ) -> None:
         self._scraper = scraper
@@ -71,31 +73,30 @@ class RedditScraper:
         self._printer = printer
         self._circuit_breaker = circuit_breaker
         self._days = days
+        self._batch_span = batch_span
         self._filemanager = filemanager
         self._tolerance = tolerance
 
         # --- State and Statistics ---
+        self._n_batches = 0
         self._n_submissions = 0
         self._n_comments = 0
         self._n_tokens = 0
+        self._current_batch_span_str = ""
         self._start_dt = None
-
-        self._filepath = ""
 
         # Set timestamp stop condition
         now_utc = datetime.now(timezone.utc)
         self._stop_utc = now_utc - timedelta(days=self._days)
 
-    @property
-    def filepath(self) -> Union[str, Path]:
-        return self._filepath
-
     def scrape(self) -> None:
         """
         Runs the main scraping loop, processing submissions and saving them in batchs.
         """
-        submissions = []
         self._startup()
+        # This list will hold the data ONLY for the current batch (e.g., one month).
+        current_batch_data = []
+
         # This 'for' loop is the only control loop needed. PRAW handles the pagination
         # of submissions automatically. The loop is terminated by 'break' when the
         # stop condition is met.
@@ -113,35 +114,40 @@ class RedditScraper:
                     )
                     break  # Exit the for loop cleanly.
 
-                # Process the submission
-                if submission.title:
-                    submission_data = self._process_submission(submission)
-                    submissions.append(submission_data)
+                # Batch Processing Logic
+                # This logic ensures data is saved and cleared correctly for each batch.
+                submission_span_str = submission_dt.strftime(self._batch_span.fmt)
 
-                    # Update the progress bar
-                    pbar.update(1)
+                # If we've entered a new month/day, save the previous batch's data
+                # The check `self._current_batch_span_str != ""` ensures we don't write an empty file on the first run.
+                if (
+                    submission_span_str != self._current_batch_span_str
+                    and self._current_batch_span_str != ""
+                ):
+                    self._process_batch(current_batch_data=current_batch_data)
+                    current_batch_data.clear()  # Reset the list for the new batch.
+
+                self._current_batch_span_str = submission_span_str
+
+                # Process the submission
+                submission_data = self._process_submission(submission)
+                current_batch_data.append(submission_data)
+
+                # Update the progress bar
+                pbar.update(1)
 
             except Exception as e:
                 error_context = {
-                    "Subreddit": self._subreddit,
+                    "Batch": self._n_batches,
                     "Submissions": self._n_submissions,
                     "Comments": self._n_comments,
                 }
-                logger.error(f"Exception occurred in RedditScraper.{error_context}\n{e}")
                 self._circuit_breaker.failure(context=error_context)
-                raise
 
         # Close the progress bar
         pbar.close()
-        # Save the file
-        if len(submissions) > 0:
-            name = self._format_name()
-            self._filepath = self._filemanager.write(data=submissions, name=name)
-        else:
-            msg = f"No submissions match the criteria"
-            logger.info(msg)
         # This call ensures the final, partially-filled batch is saved.
-        self._wrap_up()
+        self._wrap_up(final_batch_data=current_batch_data)
 
     def _startup(self) -> None:
         """Initializes the scraping process."""
@@ -153,9 +159,20 @@ class RedditScraper:
         summary = {
             "Subreddit": f"r/{self._subreddit}",
             "Time Period": f"Last {self._days} days",
+            "File Batch": "Month" if self._batch_span == BatchSpan.MONTH else "Day",
         }
         self._printer.print_dict(title=title, data=summary)
         print(f"{'-'*80}")
+
+    def _process_batch(self, current_batch_data: List) -> None:
+        """Logs new batch, counts tokens in batch and saves to file."""
+
+        logger.info(f"New batch detected. Saving data for '{self._current_batch_span_str}'.")
+        self._n_batches += 1
+        # Count number of tokens
+        self._n_tokens += self._model.count_tokens(data=current_batch_data)
+        # Persist the batch to file.
+        self._filemanager.write(data=current_batch_data, span=self._current_batch_span_str)
 
     def _process_submission(self, submission: Submission) -> Dict:
         """Processes a single submission and its comments, returning a data dictionary."""
@@ -166,22 +183,11 @@ class RedditScraper:
             "title": submission.title,
             "author": submission.author.name if submission.author else "[deleted]",
             "selftext": submission.selftext,
-            "score": submission.score,
-            "url": submission.url,
             "comments": [],
         }
 
         # This populates the "comments" list within the dictionary
         self._process_comments(submission, submission_data["comments"])
-
-        # Count number of tokens
-        token_count = self._model.count_tokens(data=submission_data)
-        logger.debug(f"token_count returned is {token_count}, of type {type(token_count)}")
-        if isinstance(token_count, int):
-            self._n_tokens += token_count
-        else:
-            logger.error((f"Received an invalid token count: {token_count}"))
-
         return submission_data
 
     def _process_comments(self, submission: Submission, comments_list: List) -> None:
@@ -199,21 +205,15 @@ class RedditScraper:
                 continue
 
             self._n_comments += 1
-
-            # Extract and format the comment url
-            relative_url = comment.permalink
-            full_url = "https://www.reddit.com" + relative_url
-
             comments_list.append(
                 {
                     "comment_id": f"t1_{comment.id}",
                     "author": comment.author.name,
                     "body": comment.body,
-                    "url": full_url,
                 }
             )
 
-    def _wrap_up(self) -> None:
+    def _wrap_up(self, final_batch_data: List) -> None:
         """Saves the final data batch and prints a summary of the job."""
         # Obtain duration as string and as seconds.
         end_dt = datetime.now()
@@ -224,6 +224,13 @@ class RedditScraper:
         else:
             raise RuntimeError("Start time not set.")
 
+        # Save the final batch and update the token count
+        if final_batch_data:
+            self._n_batches += 1
+            self._filemanager.write(data=final_batch_data, span=self._current_batch_span_str)
+            # Count number of tokens in final batch and add to token count
+            self._n_tokens += self._model.count_tokens(data=final_batch_data)
+
         # Compute Statistics
         submissions_per_min = round(self._n_submissions / duration_sec * 60, 2)
         comments_per_min = round(self._n_comments / duration_sec * 60, 2)
@@ -233,6 +240,7 @@ class RedditScraper:
         summary = {
             "Days Captured": self._days,
             "Duration": duration_str,
+            "Total Batches": self._n_batches,
             "Total Submissions": self._n_submissions,
             "Total Comments": self._n_comments,
             "Total Tokens": self._n_tokens,
@@ -248,6 +256,3 @@ class RedditScraper:
         print(f"{'='*80}\n")
 
         logger.info("Scraping job finished successfully.")
-
-    def _format_name(self) -> str:
-        return f"{self._subreddit}_{self._days}-days_{self._n_submissions}-submissions_{self._n_comments}-comments"

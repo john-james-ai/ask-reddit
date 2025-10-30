@@ -11,20 +11,22 @@
 # URL        : https://github.com/john-james-ai/ask-reddit/                                        #
 # ------------------------------------------------------------------------------------------------ #
 # Created    : Friday August 22nd 2025 02:40:33 pm                                                 #
-# Modified   : Saturday August 30th 2025 02:13:45 pm                                               #
+# Modified   : Wednesday October 1st 2025 11:17:13 pm                                              #
 # ------------------------------------------------------------------------------------------------ #
 # License    : MIT License                                                                         #
 # Copyright  : (c) 2025 John James                                                                 #
 # ================================================================================================ #
 """Encapsulates the Generative AI Model"""
-
 from typing import List
 
 import json
 import logging
+import os
 
 from dotenv import load_dotenv
 from google import genai
+
+from ask_reddit.constants import DEFAULT_GENAI_MODEL
 
 # ------------------------------------------------------------------------------------------------ #
 load_dotenv()
@@ -41,8 +43,9 @@ class GenAIModel:
     and model selection based on environment variables.
     """
 
-    def __init__(self, api_key: str, model_name: str) -> None:
-        self._model_name = model_name
+    def __init__(self) -> None:
+        api_key = os.getenv("GOOGLE_API_KEY")
+        self._model_name = os.getenv("GENAI_MODEL", DEFAULT_GENAI_MODEL)
         self._client = genai.Client(api_key=api_key)
 
     def count_tokens(self, data: List) -> int:
