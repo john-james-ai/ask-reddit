@@ -11,12 +11,12 @@
 # URL        : https://github.com/john-james-ai/ask-reddit/                                        #
 # ------------------------------------------------------------------------------------------------ #
 # Created    : Saturday June 21st 2025 02:41:05 pm                                                 #
-# Modified   : Wednesday October 1st 2025 11:17:48 pm                                              #
+# Modified   : Monday December 29th 2025 12:21:12 pm                                               #
 # ------------------------------------------------------------------------------------------------ #
 # License    : MIT License                                                                         #
 # Copyright  : (c) 2025 John James                                                                 #
 # ================================================================================================ #
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import json
 import logging
@@ -79,7 +79,7 @@ class FileManager:
             data = json.load(json_file)
             return data
 
-    def write(self, data: list, span: str) -> None:
+    def write(self, data: list, span: Optional[str]) -> None:
         """Writes data to a specified JSON file.
 
         Serializes the provided list of data into a JSON formatted string and
@@ -90,7 +90,7 @@ class FileManager:
             data (list): The list of serializable data (e.g., dicts) to write.
             span (str): A specific identifier for the file, typically a
                 date string like 'YYYY-MM' or a keyword, used to create the
-                filename.
+                filename. (Optional)
         """
         filepath = self.create_filepath(span=span)
 
@@ -120,8 +120,8 @@ class FileManager:
         if self._timestamp:
             dt = datetime.now().strftime("%Y-%m-%d")
 
-        # Filter out the empty string from dt if timestamp is false
         filename_parts = [self._source, self._topic, span, dt]
+        # Filter out the empty string from filename_parts (if not batching)
         filename = "-".join(filter(None, filename_parts)) + ".json"
 
         filepath = os.path.join(self._file_location, filename)

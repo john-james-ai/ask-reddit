@@ -11,7 +11,7 @@
 # URL        : https://github.com/john-james-ai/ask-reddit/                                        #
 # ------------------------------------------------------------------------------------------------ #
 # Created    : Saturday June 21st 2025 12:28:41 pm                                                 #
-# Modified   : Wednesday October 1st 2025 11:20:47 pm                                              #
+# Modified   : Monday December 29th 2025 12:21:17 pm                                               #
 # ------------------------------------------------------------------------------------------------ #
 # License    : MIT License                                                                         #
 # Copyright  : (c) 2025 John James                                                                 #
@@ -143,7 +143,7 @@ def main(
         help="The number of past days to extract data for.",
     ),
     batch_span: BatchSpan = typer.Option(
-        BatchSpan.MONTH,  # Default value must be an Enum member
+        None,
         "--batch",
         "-b",
         case_sensitive=False,  # Allows user to type 'M' or 'D'

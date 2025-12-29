@@ -11,7 +11,7 @@
 # URL        : https://github.com/john-james-ai/ask-reddit/                                        #
 # ------------------------------------------------------------------------------------------------ #
 # Created    : Friday August 22nd 2025 02:40:33 pm                                                 #
-# Modified   : Wednesday October 1st 2025 11:18:18 pm                                              #
+# Modified   : Monday December 29th 2025 12:18:43 pm                                               #
 # ------------------------------------------------------------------------------------------------ #
 # License    : MIT License                                                                         #
 # Copyright  : (c) 2025 John James                                                                 #
@@ -82,7 +82,7 @@ class RedditScraper:
         self._n_submissions = 0
         self._n_comments = 0
         self._n_tokens = 0
-        self._current_batch_span_str = ""
+        self._current_batch_span_str = None
         self._start_dt = None
 
         # Set timestamp stop condition
@@ -96,6 +96,8 @@ class RedditScraper:
         self._startup()
         # This list will hold the data ONLY for the current batch (e.g., one month).
         current_batch_data = []
+        # This will hold the current submission batch span
+        submission_span_str = None
 
         # This 'for' loop is the only control loop needed. PRAW handles the pagination
         # of submissions automatically. The loop is terminated by 'break' when the
@@ -107,7 +109,6 @@ class RedditScraper:
                 submission_dt = datetime.fromtimestamp(submission.created_utc, timezone.utc)
 
                 # Stop Condition Check
-                # This check happens inside the loop, as you correctly pointed out.
                 if submission_dt < self._stop_utc:
                     logger.info(
                         "Stop condition met: Found a submission older than the target date."
@@ -116,13 +117,14 @@ class RedditScraper:
 
                 # Batch Processing Logic
                 # This logic ensures data is saved and cleared correctly for each batch.
-                submission_span_str = submission_dt.strftime(self._batch_span.fmt)
+                if self._batch_span:
+                    submission_span_str = submission_dt.strftime(self._batch_span.fmt)
 
                 # If we've entered a new month/day, save the previous batch's data
                 # The check `self._current_batch_span_str != ""` ensures we don't write an empty file on the first run.
                 if (
                     submission_span_str != self._current_batch_span_str
-                    and self._current_batch_span_str != ""
+                    and self._current_batch_span_str is not None
                 ):
                     self._process_batch(current_batch_data=current_batch_data)
                     current_batch_data.clear()  # Reset the list for the new batch.
