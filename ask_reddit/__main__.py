@@ -18,15 +18,18 @@
 # ================================================================================================ #
 from typing import Optional
 
+import asyncio
 import logging
 import logging.handlers
 import os
 import sys
 
+import asyncpraw
 import praw
 import typer
 from dotenv import load_dotenv
 
+from ask_reddit.ascrape import ARedditScraper
 from ask_reddit.constants import BatchSpan
 from ask_reddit.model import GenAIModel
 from ask_reddit.monitor import CircuitBreaker
@@ -95,9 +98,7 @@ def create_praw_instance() -> Optional[praw.Reddit]:
     from environment variables.
     """
 
-    USER_AGENT = (
-        f"python:{os.getenv("APP_NAME")}:{os.getenv("VERSION")} by u/{os.getenv("REDDIT_USERNAME")}"
-    )
+    USER_AGENT = os.getenv("USER_AGENT")
     try:
         reddit = praw.Reddit(
             client_id=os.getenv("REDDIT_CLIENT_ID"),
@@ -111,6 +112,29 @@ def create_praw_instance() -> Optional[praw.Reddit]:
         return reddit
     except Exception as e:
         logging.error(f"Failed to create PRAW instance: {e}")
+        return None
+
+
+async def create_async_reddit() -> Optional[asyncpraw.Reddit]:
+    """
+    Creates and authenticates an Async PRAW Reddit instance using credentials
+    from environment variables.
+    """
+
+    USER_AGENT = os.getenv("USER_AGENT")
+    try:
+        reddit = asyncpraw.Reddit(
+            client_id=os.getenv("REDDIT_CLIENT_ID"),
+            client_secret=os.getenv("REDDIT_CLIENT_SECRET"),
+            user_agent=USER_AGENT,
+            username=os.getenv("REDDIT_USERNAME"),
+            password=os.getenv("REDDIT_PASSWORD"),
+        )
+        # Validate credentials by trying to access user data
+        logging.info(f"Successfully authenticated as Reddit user: {await reddit.user.me()}")
+        return reddit
+    except Exception as e:
+        logging.error(f"Failed to create Async PRAW instance: {e}")
         return None
 
 
@@ -149,6 +173,11 @@ def main(
         case_sensitive=False,  # Allows user to type 'M' or 'D'
         help="The time span for batch output files.",
     ),
+    async_mode: bool = typer.Option(
+        True,
+        "--async/--sync",
+        help="Use the fast asynchronous scraper (default) or the synchronous fallback.",
+    ),
 ):
     """
     The main function to run the Reddit scraper CLI.
@@ -159,13 +188,10 @@ def main(
     setup_logging(log_filepath)
 
     # Acknowledge command line invocation and parameters
-    logging.info(f"CLI started for r/{subreddit}, days={days}, batch='{batch_span}'")
-
-    # Obtain the reddit praw instance
-    reddit = create_praw_instance()
-    if not reddit:
-        logging.critical("Exiting due to failed Reddit authentication.")
-        raise typer.Exit(code=1)
+    logging.info(
+        f"CLI started for r/{subreddit}, days={days}, batch='{batch_span}', "
+        f"engine={'async' if async_mode else 'sync'}"
+    )
 
     # Instantiate the file manager responsible for persisting submissions to json
     file_manager = create_file_manager(subreddit=subreddit)
@@ -179,7 +205,42 @@ def main(
     # Instantiate the printer object
     printer = Printer()
 
-    # Instantiate the circuit breaker
+    if async_mode:
+        asyncio.run(
+            _run_async(
+                subreddit=subreddit,
+                days=days,
+                batch_span=batch_span,
+                file_manager=file_manager,
+                model=model,
+                printer=printer,
+            )
+        )
+    else:
+        _run_sync(
+            subreddit=subreddit,
+            days=days,
+            batch_span=batch_span,
+            file_manager=file_manager,
+            model=model,
+            printer=printer,
+        )
+
+
+def _run_sync(
+    subreddit: str,
+    days: int,
+    batch_span: BatchSpan,
+    file_manager: FileManager,
+    model: GenAIModel,
+    printer: Printer,
+) -> None:
+    """Runs the synchronous PRAW scraper (fallback engine)."""
+    reddit = create_praw_instance()
+    if not reddit:
+        logging.critical("Exiting due to failed Reddit authentication.")
+        raise typer.Exit(code=1)
+
     cb = CircuitBreaker()
     scraper = RedditScraper(
         scraper=reddit,
@@ -192,6 +253,36 @@ def main(
         filemanager=file_manager,
     )
     scraper.scrape()
+
+
+async def _run_async(
+    subreddit: str,
+    days: int,
+    batch_span: BatchSpan,
+    file_manager: FileManager,
+    model: GenAIModel,
+    printer: Printer,
+) -> None:
+    """Runs the asynchronous Async PRAW scraper (default engine)."""
+    reddit = await create_async_reddit()
+    if not reddit:
+        logging.critical("Exiting due to failed Reddit authentication.")
+        raise typer.Exit(code=1)
+
+    try:
+        scraper = ARedditScraper(
+            scraper=reddit,
+            model=model,
+            printer=printer,
+            subreddit=subreddit,
+            days=days,
+            batch_span=batch_span,
+            filemanager=file_manager,
+        )
+        await scraper.scrape()
+    finally:
+        # Async PRAW requires an explicit close to release the aiohttp session.
+        await reddit.close()
 
 
 if __name__ == "__main__":
