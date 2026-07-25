@@ -12,7 +12,7 @@
 # URL        : https://github.com/john-james-ai/ask-reddit/                                        #
 # ------------------------------------------------------------------------------------------------ #
 # Created    : Saturday July 25th 2026 09:04:04 am                                                 #
-# Modified   : Saturday July 25th 2026 12:31:01 pm                                                 #
+# Modified   : Saturday July 25th 2026 03:53:01 pm                                                 #
 # ------------------------------------------------------------------------------------------------ #
 # License    : MIT License                                                                         #
 # Copyright  : (c) 2026 John James                                                                 #
@@ -22,7 +22,7 @@
 import logging
 from abc import ABC, abstractmethod
 from datetime import datetime
-from typing import Any, Dict, Generic, List, TypeVar
+from typing import Any, Dict, Generic, List, Set, TypeVar
 
 import asyncpraw
 import praw
@@ -95,8 +95,12 @@ class BaseRedditScraper(ABC, Generic[TReddit]):
         self._start_dt = None      
                 
         # Set timestamp stop condition
-        effective_months = min(self._filemanager.get_months_since_last() or self._months, self._months) if not self._force else self._months
-        self._stop_utc = DateTime.get_month_dt(n=effective_months)
+        self._stop_utc = DateTime.get_month_dt(n=self._months)
+
+        # The spans this run must persist; every other span is skipped in the loop.
+        self._needed_spans = self._compute_needed_spans()
+
+
 
     # -------------------------------------------------------------------------------------------- #
     @property
@@ -174,3 +178,42 @@ class BaseRedditScraper(ABC, Generic[TReddit]):
         print(f"{'='*80}\n")
 
         logger.info(f"{self.__class__.__name__} finished successfully.")
+
+    # -------------------------------------------------------------------------------------------- #
+    def _compute_needed_spans(self) -> Set[str]:
+        """Returns the set of month spans this run must persist.
+
+        A span is needed when it is missing from disk, when it is the current month, or
+        when it is the newest span already on file. The last case is what keeps a month
+        from being left permanently partial: a run that happens mid-month writes that
+        month incomplete, and since it is no longer the current month on the next run,
+        nothing would otherwise revisit it. Because the scraper always walks newest to
+        oldest, the newest span on file is the only one that could have been captured
+        while it was still in progress; every span behind it was already a finished
+        month when it was written. When the last run was in the current month, that
+        span is the current month and this rule costs nothing.
+
+        Spans on disk that are older than the newest are skipped, which is where the run
+        avoids re-fetching comment trees it already has.
+
+        Returns:
+            Set[str]: The spans to persist, as ``YYYY-MM`` labels. When ``force`` is
+                set, this is the entire requested window.
+        """
+        requested = [DateTime.get_month_st(n) for n in range(1, self._months + 1)]
+
+        if self._force:
+            return set(requested)
+
+        on_disk = {span for span in requested if self._filemanager.exists(span=span)}
+        needed = {span for span in requested if span not in on_disk}
+
+        # The current month is always rescraped; it is partial by definition.
+        needed.add(requested[0])
+
+        # `requested` is newest first, so the first match is the newest span on file.
+        newest_on_disk = next((span for span in requested if span in on_disk), None)
+        if newest_on_disk is not None:
+            needed.add(newest_on_disk)
+
+        return needed

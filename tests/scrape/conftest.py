@@ -24,11 +24,14 @@ constructed through the same factory functions `__main__` uses.
 
 Target subreddit
     r/apljk was chosen by measuring candidates against what actually governs cost and
-    coverage. It carries roughly ten submissions in the current month and eleven in the
-    previous one, with the largest thread under twenty comments, so a two month scrape
-    is about twenty one submissions and finishes well inside the rate limit. Critically,
-    both spans are populated, so a run produces two batch files and genuinely exercises
-    the span boundary, the resume calculation, and the timestamped rescrape path.
+    coverage. It carries roughly ten submissions per month with the largest thread under
+    twenty comments, so a four month scrape is well inside the rate limit. Several spans
+    are populated, so a run produces multiple batch files and genuinely exercises the
+    span boundary, span selection, and the timestamped rescrape path.
+
+    A quiet month may legitimately have no submissions, in which case no file is written
+    for it. Assertions therefore check invariants against the spans that actually exist
+    rather than assuming every month in the window produced one.
 
 Cost and isolation
     Every scrape writes into a module scoped temporary directory, so the project's
@@ -46,11 +49,13 @@ from typing import Any, Callable, Dict, List
 
 import json
 import re
+import shutil
 from pathlib import Path
 
 import pytest
 
 from ask_reddit.date import DateTime
+from ask_reddit.persist import FileManager
 
 # ------------------------------------------------------------------------------------------------ #
 # pylint: disable=missing-class-docstring, redefined-outer-name
@@ -76,10 +81,10 @@ def subreddit() -> str:
 def months() -> int:
     """Returns the month count under test.
 
-    Two is the smallest value that spans a batch boundary, which is the behavior these
-    tests exist to verify.
+    Four gives room to place a gap in the middle of the window and to simulate a run
+    that aborted partway, neither of which two spans can express.
     """
-    return 2
+    return 4
 
 
 @pytest.fixture(scope="module")
@@ -185,3 +190,47 @@ def assert_valid_submission() -> Callable[[Dict[str, Any]], None]:
             assert comment["body"], "comment body is empty"
 
     return _assert_valid_submission
+
+
+# ------------------------------------------------------------------------------------------------ #
+#                                    SPAN SELECTION SCENARIOS                                      #
+# ------------------------------------------------------------------------------------------------ #
+@pytest.fixture
+def present_spans() -> Callable[[Path, str], set]:
+    """Returns a callable listing the spans that have a base file in a directory."""
+
+    def _present_spans(directory: Path, topic: str) -> set:
+        pattern = re.compile(rf"^reddit-{re.escape(topic.lower())}-(\d{{4}}-\d{{2}})\.json$")
+        matches = (pattern.match(path.name) for path in (directory / topic.lower()).glob("*.json"))
+        return {match.group(1) for match in matches if match}
+
+    return _present_spans
+
+
+@pytest.fixture
+def corpus_without(tmp_path: Path, subreddit: str) -> Callable[[Path, List[int]], Path]:
+    """Returns a callable copying a scraped corpus with given spans removed.
+
+    The corpus is real output from a live scrape; the copy simply loses some of its
+    files. That is what an aborted run or a deleted file actually leaves behind, so the
+    resulting state is genuine rather than fabricated. Paths are resolved through the
+    real `FileManager`, so the naming matches what a scrape would have written.
+
+    Returns:
+        Callable[[Path, List[int]], Path]: Function taking the source corpus directory
+            and the month counts to remove, returning the modified copy.
+    """
+
+    def _corpus_without(source: Path, month_counts: List[int]) -> Path:
+        destination = tmp_path / f"corpus_{'_'.join(str(n) for n in month_counts) or 'full'}"
+        shutil.copytree(source, destination)
+
+        file_manager = FileManager(
+            source="reddit", topic=subreddit, file_location=str(destination)
+        )
+        for n in month_counts:
+            file_manager.create_filepath(span=DateTime.get_month_st(n)).unlink(missing_ok=True)
+
+        return destination
+
+    return _corpus_without

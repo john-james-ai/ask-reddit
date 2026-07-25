@@ -150,6 +150,13 @@ class RedditScraper(BaseRedditScraper[praw.Reddit]):
                 # This logic ensures data is saved and cleared correctly for each batch.
                 submission_span_str = submission_dt.strftime(MONTH_SPAN_FORMAT)
 
+                # Skip spans already complete on disk without fetching comment trees.
+                # This must precede the batch boundary check below: leaving
+                # `_current_batch_span_str` untouched for skipped spans is what keeps a
+                # skipped month from triggering a flush on every one of its submissions.
+                if submission_span_str not in self._needed_spans:
+                    continue
+
                 # If we've entered a new month/day, save the previous batch's data
                 # The check `self._current_batch_span_str != ""` ensures we don't write an empty file on the first run.
                 if (

@@ -148,8 +148,15 @@ class TestSyncScrapeProducesCorpus:
         files = base_span_files(scrape_dir, subreddit)
         written_spans = {span_of(path) for path in files}
 
-        assert written_spans == set(expected_spans), (
-            f"expected spans {sorted(expected_spans)}, found {sorted(written_spans)}"
+        # A quiet month may have no submissions and therefore no file, so the written
+        # spans must be a subset of those requested rather than an exact match. At least
+        # two are required, or the span boundary was never crossed and the batching
+        # logic went untested.
+        assert written_spans <= set(expected_spans), (
+            f"wrote spans outside the requested window: {sorted(written_spans - set(expected_spans))}"
+        )
+        assert len(written_spans) >= 2, (
+            f"only {len(written_spans)} span(s) written; no batch boundary was exercised"
         )
         assert completed_scrape._n_batches == len(files), (
             f"reported {completed_scrape._n_batches} batches but wrote {len(files)} files"
@@ -244,64 +251,162 @@ class TestSyncScrapeProducesCorpus:
 
 
 # ------------------------------------------------------------------------------------------------ #
-#                                    RESUME AND FORCE                                              #
+#                                       SPAN SELECTION                                             #
 # ------------------------------------------------------------------------------------------------ #
 @pytest.mark.integration
-class TestSyncScrapeResumes:
+class TestSyncScrapeSelectsSpans:
+    """Span selection driven by real corpora with files removed.
+
+    Each case starts from the corpus the live scrape produced and deletes specific span
+    files, which is exactly what an aborted run or a lost file leaves behind. Because a
+    quiet month may legitimately have produced no file, assertions that a span is *not*
+    selected are made only for spans confirmed present on disk.
+    """
+
     # ============================================================================================ #
-    def test_second_run_rescrapes_only_the_current_month(
+    def test_complete_corpus_selects_only_the_current_month(
         self,
         completed_scrape: RedditScraper,
         subreddit: str,
         months: int,
         scrape_dir: Path,
-        base_span_files: Callable[[Path, str], List[Path]],
-        all_span_files: Callable[[Path, str], List[Path]],
-        span_of: Callable[[Path], str],
+        corpus_without: Callable[[Path, List[int]], Path],
+        present_spans: Callable[[Path, str], set],
     ) -> None:
         start = log_start(self.__class__.__name__, inspect.stack()[0][3])
         # ---------------------------------------------------------------------------------------- #
-        files_before = set(all_span_files(scrape_dir, subreddit))
-        base_before = set(base_span_files(scrape_dir, subreddit))
+        directory = corpus_without(scrape_dir, [])
+        scraper = build_scraper(subreddit, months, directory, force=False)
 
-        scraper = build_scraper(
-            subreddit=subreddit, months=months, directory=scrape_dir, force=False
-        )
-        # With the current month already on file, the resume calculation should pull the
-        # stop boundary forward to the start of this month rather than the requested two.
-        assert scraper._stop_utc == DateTime.get_month_dt(n=1), (
-            "stop boundary was not narrowed by the files already on disk"
-        )
+        current = DateTime.get_month_st(n=1)
+        assert current in scraper._needed_spans, "the current month must always be selected"
 
-        scraper.scrape()
-
-        new_files = set(all_span_files(scrape_dir, subreddit)) - files_before
-        assert len(new_files) == 1, f"expected exactly one new file, found {sorted(new_files)}"
-        assert span_of(new_files.pop()) == DateTime.get_month_st(n=1), (
-            "the rescrape did not target the current month"
-        )
-
-        # Nothing already on disk may be replaced or removed by a rescrape.
-        assert set(base_span_files(scrape_dir, subreddit)) == base_before
+        for span in present_spans(directory, subreddit):
+            if span != current:
+                assert span not in scraper._needed_spans, (
+                    f"{span} is complete on disk and should have been skipped"
+                )
         # ---------------------------------------------------------------------------------------- #
         log_end(self.__class__.__name__, inspect.stack()[0][3], start)
 
     # ============================================================================================ #
-    def test_force_ignores_existing_files_and_scrapes_the_full_window(
+    def test_aborted_run_still_selects_the_months_it_never_reached(
         self,
         completed_scrape: RedditScraper,
         subreddit: str,
         months: int,
         scrape_dir: Path,
+        corpus_without: Callable[[Path, List[int]], Path],
+        present_spans: Callable[[Path, str], set],
     ) -> None:
         start = log_start(self.__class__.__name__, inspect.stack()[0][3])
         # ---------------------------------------------------------------------------------------- #
-        scraper = build_scraper(
-            subreddit=subreddit, months=months, directory=scrape_dir, force=True
-        )
+        # A four month run that died partway leaves only the newest spans. Counting back
+        # from the newest file would conclude one month was needed and abandon the rest.
+        directory = corpus_without(scrape_dir, [3, 4])
+        scraper = build_scraper(subreddit, months, directory, force=False)
 
-        # force bypasses the resume calculation entirely, so the boundary is the full
-        # requested window regardless of what is already on disk.
+        assert DateTime.get_month_st(n=3) in scraper._needed_spans
+        assert DateTime.get_month_st(n=4) in scraper._needed_spans
+        assert DateTime.get_month_st(n=1) in scraper._needed_spans
+
+        # The month that completed before the abort must not be refetched.
+        second = DateTime.get_month_st(n=2)
+        if second in present_spans(directory, subreddit):
+            assert second not in scraper._needed_spans
+        # ---------------------------------------------------------------------------------------- #
+        log_end(self.__class__.__name__, inspect.stack()[0][3], start)
+
+    # ============================================================================================ #
+    def test_interior_gap_is_selected(
+        self,
+        completed_scrape: RedditScraper,
+        subreddit: str,
+        months: int,
+        scrape_dir: Path,
+        corpus_without: Callable[[Path, List[int]], Path],
+        present_spans: Callable[[Path, str], set],
+    ) -> None:
+        start = log_start(self.__class__.__name__, inspect.stack()[0][3])
+        # ---------------------------------------------------------------------------------------- #
+        directory = corpus_without(scrape_dir, [2])
+        scraper = build_scraper(subreddit, months, directory, force=False)
+
+        assert DateTime.get_month_st(n=2) in scraper._needed_spans, "the gap was not filled"
+
+        third = DateTime.get_month_st(n=3)
+        if third in present_spans(directory, subreddit):
+            assert third not in scraper._needed_spans, "a complete span behind the gap was refetched"
+        # ---------------------------------------------------------------------------------------- #
+        log_end(self.__class__.__name__, inspect.stack()[0][3], start)
+
+    # ============================================================================================ #
+    def test_month_left_partial_by_an_earlier_run_is_revisited(
+        self,
+        completed_scrape: RedditScraper,
+        subreddit: str,
+        months: int,
+        scrape_dir: Path,
+        corpus_without: Callable[[Path, List[int]], Path],
+        present_spans: Callable[[Path, str], set],
+    ) -> None:
+        start = log_start(self.__class__.__name__, inspect.stack()[0][3])
+        # ---------------------------------------------------------------------------------------- #
+        # Without the current month on disk, the newest remaining span is the one an
+        # earlier run was working on when it stopped, so it is presumed incomplete.
+        directory = corpus_without(scrape_dir, [1])
+        scraper = build_scraper(subreddit, months, directory, force=False)
+
+        present = present_spans(directory, subreddit)
+        assert DateTime.get_month_st(n=1) in scraper._needed_spans
+
+        if present:
+            newest = max(present)
+            assert newest in scraper._needed_spans, (
+                f"{newest} was left partial by an earlier run and must be revisited"
+            )
+            for span in present:
+                if span != newest:
+                    assert span not in scraper._needed_spans
+        # ---------------------------------------------------------------------------------------- #
+        log_end(self.__class__.__name__, inspect.stack()[0][3], start)
+
+    # ============================================================================================ #
+    def test_force_selects_the_entire_window_regardless_of_disk(
+        self,
+        completed_scrape: RedditScraper,
+        subreddit: str,
+        months: int,
+        scrape_dir: Path,
+        expected_spans: List[str],
+        corpus_without: Callable[[Path, List[int]], Path],
+    ) -> None:
+        start = log_start(self.__class__.__name__, inspect.stack()[0][3])
+        # ---------------------------------------------------------------------------------------- #
+        directory = corpus_without(scrape_dir, [])
+        scraper = build_scraper(subreddit, months, directory, force=True)
+
+        assert scraper._needed_spans == set(expected_spans)
+        # ---------------------------------------------------------------------------------------- #
+        log_end(self.__class__.__name__, inspect.stack()[0][3], start)
+
+    # ============================================================================================ #
+    def test_stop_boundary_always_covers_the_requested_window(
+        self,
+        completed_scrape: RedditScraper,
+        subreddit: str,
+        months: int,
+        scrape_dir: Path,
+        corpus_without: Callable[[Path, List[int]], Path],
+    ) -> None:
+        start = log_start(self.__class__.__name__, inspect.stack()[0][3])
+        # ---------------------------------------------------------------------------------------- #
+        # Selection decides what is fetched, not the boundary. The boundary must stay at
+        # the far edge of the window, or the loop would break out before reaching an
+        # older span that selection had marked as needed.
+        directory = corpus_without(scrape_dir, [3, 4])
+        scraper = build_scraper(subreddit, months, directory, force=False)
+
         assert scraper._stop_utc == DateTime.get_month_dt(n=months)
         # ---------------------------------------------------------------------------------------- #
         log_end(self.__class__.__name__, inspect.stack()[0][3], start)
