@@ -46,7 +46,6 @@ from tqdm import tqdm
 
 from ask_reddit.constants import DEFAULT_ERROR_TOLERANCE, MONTH_SPAN_FORMAT
 from ask_reddit.model import GenAIModel
-from ask_reddit.monitor import CircuitBreaker
 from ask_reddit.persist import FileManager
 from ask_reddit.print import Printer
 from ask_reddit.scrape import BaseRedditScraper
@@ -71,8 +70,7 @@ class RedditScraper(BaseRedditScraper[praw.Reddit]):
         subreddit (str): Subreddit name to scrape (e.g., 'learnpython').
         months (int): Number of past months to include in the scrape.
         filemanager (FileManager): FileManager used to persist batches.
-        circuit_breaker (CircuitBreaker): Circuit breaker used to track failures.
-        tolerance (int): Consecutive error tolerance before aborting.
+        tolerance (int): Consecutive failures tolerated before the run aborts.
         force (bool): When True, scrape the full requested window instead of
             resuming from what is already on file. Existing files are never
             overwritten either way; a rescrape is written alongside them.
@@ -80,7 +78,7 @@ class RedditScraper(BaseRedditScraper[praw.Reddit]):
     Examples:
         >>> scraper = RedditScraper(scraper=reddit, model=model, printer=printer,
         ...                        subreddit='learnpython', months=1,
-        ...                        filemanager=file_manager, circuit_breaker=cb)
+        ...                        filemanager=file_manager)
         >>> scraper.scrape()
     """
 
@@ -92,7 +90,6 @@ class RedditScraper(BaseRedditScraper[praw.Reddit]):
         subreddit: str,
         months: int,        
         filemanager: FileManager,
-        circuit_breaker: CircuitBreaker,
         tolerance: int = DEFAULT_ERROR_TOLERANCE,    
         force: bool = False,   
         **kwargs,
@@ -108,7 +105,6 @@ class RedditScraper(BaseRedditScraper[praw.Reddit]):
             tolerance=tolerance,
             force=force,
         )
-        self._circuit_breaker = circuit_breaker
 
     @property
     def description(self) -> Dict:
@@ -124,8 +120,9 @@ class RedditScraper(BaseRedditScraper[praw.Reddit]):
         The method iterates over subreddit submissions (newest first), groups
         submissions into monthly batches, processes each submission and its
         comments, and writes completed batches to disk. Progress is displayed
-        with a tqdm progress bar. Any exceptions increment the circuit breaker
-        failure count and the loop continues until the stop condition is met.
+        with a tqdm progress bar. A failed submission is logged and skipped; the run
+        aborts once ``tolerance`` consecutive failures accumulate. Request pacing is
+        left entirely to PRAW's own rate limiter.
         """
         self._startup()
         # This list will hold the data ONLY for the current batch (e.g., one month).
@@ -140,7 +137,6 @@ class RedditScraper(BaseRedditScraper[praw.Reddit]):
 
         for submission in self._scraper.subreddit(self._subreddit).new(limit=None):
             try:
-                self._circuit_breaker.success()
                 submission_dt = datetime.fromtimestamp(submission.created_utc, timezone.utc)
 
                 # Stop Condition Check
@@ -172,13 +168,20 @@ class RedditScraper(BaseRedditScraper[praw.Reddit]):
                 # Update the progress bar
                 pbar.update(1)
 
-            except Exception:
-                error_context = {
-                    "Batch": self._n_batches,
-                    "Submissions": self._n_submissions,
-                    "Comments": self._n_comments,
-                }
-                self._circuit_breaker.failure(context=error_context)
+                # Reset only once the submission has actually succeeded.
+                self._consecutive_failures = 0
+
+            except Exception as e:
+                self._consecutive_failures += 1
+                logger.error(
+                    f"Failed to process a submission (consecutive failures: "
+                    f"{self._consecutive_failures}): {e}"
+                )
+                if self._consecutive_failures > self._tolerance:
+                    logger.critical(
+                        f"Exceeded failure tolerance of {self._tolerance}. Aborting scrape."
+                    )
+                    break
 
         # Close the progress bar
         pbar.close()

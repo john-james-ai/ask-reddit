@@ -21,15 +21,10 @@ from __future__ import annotations
 # ------------------------------------------------------------------------------------------------ #
 DEFAULT_GENAI_MODEL = "gemini-2.5-flash"
 DEFAULT_ERROR_TOLERANCE = 5
-DEFAULT_RATE_LIMIT_PER_MINUTE = 85
 DEFAULT_CONCURRENCY = 10
 DEFAULT_MAX_RETRIES = 5
 DEFAULT_RETRY_BACKOFF = 2.0
 DEFAULT_JSON_INDENT = 2
-DEFAULT_SUCCESS_THRESHOLD = 3
-DEFAULT_FAILURE_THRESHOLD = 5
-DEFAULT_OPEN_FACTOR = 10
-DEFAULT_HALF_OPEN_FACTOR = 2
 
 # Batches are always whole calendar months. This is the single definition of the
 # span label used for filenames, resume checks, and batch boundaries.

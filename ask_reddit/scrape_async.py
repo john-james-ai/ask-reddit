@@ -37,11 +37,16 @@
 # ================================================================================================ #
 """Asynchronous Scrape Module.
 
-An async counterpart to :mod:`ask_reddit.scrape`. It uses Async PRAW, which internally
-follows all of Reddit's API rate rules, so this path needs no manual rate limiting, no
-sleeps, and no circuit breaker. Concurrency (fetching many submissions' comment trees at
-once) is what raises throughput over the synchronous scraper; a semaphore bounds the number
-of in-flight fetches for memory/politeness only.
+An async counterpart to :mod:`ask_reddit.scrape_sync`. Both engines leave request pacing
+entirely to the PRAW rate limiter, which follows Reddit's API rules from the response
+headers; neither sleeps on its own schedule. Concurrency (fetching many submissions'
+comment trees at once) is what raises throughput over the synchronous scraper; a semaphore
+bounds the number of in-flight fetches for memory and politeness.
+
+The one place this module does sleep is :meth:`ARedditScraper._with_retry`, which backs off
+only in reaction to a 429. Async PRAW's limiter is not concurrency-safe, so parallel
+expansion can outrun it; the synchronous engine issues requests sequentially and needs no
+such handling.
 """
 import asyncio
 import logging

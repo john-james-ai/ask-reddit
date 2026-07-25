@@ -34,7 +34,6 @@ import typer
 from dotenv import load_dotenv
 
 from ask_reddit.model import GenAIModel
-from ask_reddit.monitor import CircuitBreaker
 from ask_reddit.persist import FileManager
 from ask_reddit.print import Printer
 from ask_reddit.scrape_async import ARedditScraper
@@ -215,12 +214,10 @@ def run_sync(
         logging.critical("Exiting due to failed Reddit authentication.")
         raise typer.Exit(code=1)
 
-    cb = CircuitBreaker()
     scraper = RedditScraper(
         scraper=reddit,
         model=model,
         printer=printer,
-        circuit_breaker=cb,
         subreddit=subreddit,
         months=months,
         filemanager=file_manager,
