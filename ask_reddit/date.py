@@ -18,11 +18,43 @@
 # ================================================================================================ #
 """Date Utilities"""
 
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
+
+from ask_reddit.constants import MONTH_SPAN_FORMAT
 
 
 # ------------------------------------------------------------------------------------------------ #
 class DateTime:
+
+    @staticmethod
+    def get_month_dt(n: int) -> datetime:
+        """Returns the UTC datetime for the 1st of the month, n-1 months back.
+
+        Args:
+            n (int): The number of months in the span, counting the current month.
+                n=1 returns the 1st of the current month.
+
+        Returns:
+            datetime: Midnight, UTC, on the 1st of the target month.
+        """
+        now = datetime.now(timezone.utc)
+        # Convert to an absolute month index so the subtraction handles year rollover.
+        month_index = now.year * 12 + (now.month - 1) - (n - 1)
+        year, month = divmod(month_index, 12)
+        return datetime(year, month + 1, 1, tzinfo=timezone.utc)
+
+    @staticmethod
+    def get_month_st(n: int) -> str:
+        """Returns the 'YYYY-MM' string for the month n-1 months back.
+
+        Args:
+            n (int): The number of months in the span, counting the current month.
+                n=1 returns the current 'YYYY-MM'.
+
+        Returns:
+            str: The target month formatted as 'YYYY-MM'.
+        """
+        return DateTime.get_month_dt(n).strftime(MONTH_SPAN_FORMAT)
 
     @staticmethod
     def format_timedelta(td: timedelta) -> str:

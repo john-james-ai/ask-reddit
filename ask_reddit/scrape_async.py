@@ -1,4 +1,23 @@
 #!/usr/bin/env python3
+# ================================================================================================ #
+# Project    : Ask Reddit                                                                          #
+# Project    : Ask Reddit                                                                          #
+# Version    : 0.1.0                                                                               #
+# Python     : 3.13.5                                                                              #
+# Filename   : scrape-async.py                                                                     #
+# Filename   : scrape-async.py                                                                     #
+# ------------------------------------------------------------------------------------------------ #
+# Author     : John James                                                                          #
+# URL        : https://github.com/john-james-ai/ask-reddit/                                        #
+# URL        : https://github.com/john-james-ai/ask-reddit/                                        #
+# ------------------------------------------------------------------------------------------------ #
+# Modified   : Saturday July 25th 2026 11:57:32 am                                                 #
+# Modified   : Saturday July 25th 2026 11:57:32 am                                                 #
+# ------------------------------------------------------------------------------------------------ #
+# License    : MIT License                                                                         #
+# Copyright  : (c) 2026 John James                                                                 #
+# ================================================================================================ #
+#!/usr/bin/env python3
 # -*- coding:utf-8 -*-
 # ================================================================================================ #
 # Project    : Ask Reddit                                                                          #
@@ -24,11 +43,10 @@ sleeps, and no circuit breaker. Concurrency (fetching many submissions' comment 
 once) is what raises throughput over the synchronous scraper; a semaphore bounds the number
 of in-flight fetches for memory/politeness only.
 """
-from typing import Dict, List
-
 import asyncio
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
+from typing import Dict, List
 
 import asyncpraw
 from asyncpraw.models import Comment, Submission
@@ -40,36 +58,47 @@ from ask_reddit.constants import (
     DEFAULT_ERROR_TOLERANCE,
     DEFAULT_MAX_RETRIES,
     DEFAULT_RETRY_BACKOFF,
-    BatchSpan,
+    MONTH_SPAN_FORMAT,
 )
-from ask_reddit.date import DateTime
 from ask_reddit.model import GenAIModel
 from ask_reddit.persist import FileManager
 from ask_reddit.print import Printer
+from ask_reddit.scrape import BaseRedditScraper
 
 # ------------------------------------------------------------------------------------------------ #
 logger = logging.getLogger(__name__)
 # ------------------------------------------------------------------------------------------------ #
 
 
-class ARedditScraper:
-    """Asynchronously scrapes submissions and comments from a subreddit for a defined period.
+class ARedditScraper(BaseRedditScraper[asyncpraw.Reddit]):
+    """Asynchronously scrape submissions and comments from a subreddit.
 
-    This is a drop-in, faster alternative to :class:`ask_reddit.scrape.RedditScraper`. It
-    preserves the same batch-at-a-time output (newest-first ordering, span-boundary file
-    grouping, identical JSON schema) but fetches each batch's comment trees concurrently.
+    This is a faster, async counterpart to :class:`ask_reddit.scrape.RedditScraper`.
+    It maintains the same output schema and batch grouping but fetches comment
+    trees concurrently to increase throughput. Async PRAW enforces Reddit's rate
+    limits; this implementation bounds concurrency with a semaphore to limit
+    resource usage.
 
-    Async PRAW obeys Reddit's rate limits and retries transient errors internally, so no
-    circuit breaker or ``sleep`` is used here.
+    Args:
+        scraper (asyncpraw.Reddit): Authenticated async PRAW Reddit client.
+        model (GenAIModel): Generative AI helper used for token accounting.
+        printer (Printer): Printer instance for formatted summaries.
+        subreddit (str): Subreddit name to scrape (e.g., 'learnpython').
+        months (int): Number of past months to include in the scrape.
+        filemanager (FileManager): FileManager used to persist batches.
+        tolerance (int): Consecutive error tolerance before aborting.
+        force (bool): When True, scrape the full requested window instead of
+            resuming from what is already on file. Existing files are never
+            overwritten either way; a rescrape is written alongside them.
+        concurrency (int): Maximum concurrent submission processors.
+        max_retries (int): Number of retries for retriable operations.
+        retry_backoff (float): Base backoff seconds used when rate limited.
 
-    Attributes:
-        _scraper (asyncpraw.Reddit): An authenticated Async PRAW Reddit instance.
-        _subreddit (str): The name of the subreddit to scrape.
-        _days (int): The number of past days to extract data for.
-        _batch_span (BatchSpan): The enum member for file grouping (DAY or MONTH).
-        _filemanager (FileManager): An instance of FileManager to handle writing files.
-        _concurrency (int): The maximum number of submissions fetched concurrently.
-        _tolerance (int): The number of consecutive errors to tolerate before stopping.
+    Examples:
+        >>> scraper = ARedditScraper(scraper=reddit, model=model, printer=printer,
+        ...                         subreddit='learnpython', months=1,
+        ...                         filemanager=file_manager)
+        >>> asyncio.run(scraper.scrape())
     """
 
     def __init__(
@@ -78,42 +107,41 @@ class ARedditScraper:
         model: GenAIModel,
         printer: Printer,
         subreddit: str,
-        days: int,
-        batch_span: BatchSpan,
+        months: int,
         filemanager: FileManager,
-        concurrency: int = DEFAULT_CONCURRENCY,
         tolerance: int = DEFAULT_ERROR_TOLERANCE,
+        force: bool = False,
+        *,
+        concurrency: int = DEFAULT_CONCURRENCY,        
         max_retries: int = DEFAULT_MAX_RETRIES,
         retry_backoff: float = DEFAULT_RETRY_BACKOFF,
     ) -> None:
-        self._scraper = scraper
-        self._subreddit = subreddit
-        self._model = model
-        self._printer = printer
-        self._days = days
-        self._batch_span = batch_span
-        self._filemanager = filemanager
-        self._concurrency = concurrency
-        self._tolerance = tolerance
+        super().__init__(
+            scraper=scraper,
+            model=model,
+            printer=printer,
+            subreddit=subreddit,
+            months=months,
+            filemanager=filemanager,
+            tolerance=tolerance,
+            force=force,
+        )
+        self._concurrency = concurrency        
         self._max_retries = max_retries
         self._retry_backoff = retry_backoff
         self._sem = asyncio.Semaphore(concurrency)
-
-        # --- State and Statistics ---
-        self._n_batches = 0
-        self._n_submissions = 0
-        self._n_comments = 0
-        self._n_tokens = 0
-        self._consecutive_failures = 0
-        self._current_batch_span_str = None
-        self._start_dt = None
-
-        # Set timestamp stop condition
-        now_utc = datetime.now(timezone.utc)
-        self._stop_utc = now_utc - timedelta(days=self._days)
+    
+    @property
+    def description(self) -> Dict:
+        """Return a brief description of the scraping job."""
+        return {
+            "Subreddit": f"r/{self._subreddit}",
+            "Time Period": f"Last {self._months} months",
+            "Concurrency": self._concurrency,            
+        }
 
     async def scrape(self) -> None:
-        """Runs the main scraping loop, processing submissions and saving them in batches."""
+        """Run the main scraping loop, processing submissions and saving batches."""
         self._startup()
         # Holds the raw submission objects for the current batch (e.g. one month). Comment
         # trees are fetched concurrently once a batch is complete.
@@ -133,8 +161,7 @@ class ARedditScraper:
                 break
 
             # Determine the batch span string for this submission.
-            if self._batch_span:
-                submission_span_str = submission_dt.strftime(self._batch_span.fmt)
+            submission_span_str = submission_dt.strftime(MONTH_SPAN_FORMAT)
 
             # If we've entered a new month/day, flush the previous, now-complete batch.
             if (
@@ -157,28 +184,9 @@ class ARedditScraper:
 
         self._wrap_up()
 
-    def _startup(self) -> None:
-        """Initializes the scraping process."""
-        print(f"\n{'='*80}")
-        self._start_dt = datetime.now()
-        logger.info(f"Starting async scrape for r/{self._subreddit} for the last {self._days} days.")
-        title = f"Reddit Scraper (async) Started on {self._start_dt.strftime('%Y-%m-%d at %H:%M:%S')}"
-        summary = {
-            "Subreddit": f"r/{self._subreddit}",
-            "Time Period": f"Last {self._days} days",
-            "Concurrency": self._concurrency,
-            "File Batch": "Month" if self._batch_span == BatchSpan.MONTH else "Day",
-        }
-        self._printer.print_dict(title=title, data=summary)
-        print(f"{'-'*80}")
 
     async def _flush_batch(self, batch: List[Submission], pbar) -> bool:
-        """Concurrently fetches comments for a batch, then counts tokens and writes to file.
-
-        Returns:
-            bool: True if the consecutive-failure tolerance was exceeded and the run should
-                abort, otherwise False.
-        """
+        """Fetch comments for a batch concurrently and persist the batch."""
         if not batch:
             return False
 
@@ -213,17 +221,9 @@ class ARedditScraper:
         self._process_batch(batch_data)
         return False
 
-    def _process_batch(self, batch_data: List[Dict]) -> None:
-        """Logs a new batch, counts its tokens, and saves it to file."""
-        if not batch_data:
-            return
-        logger.info(f"Saving data for batch '{self._current_batch_span_str}'.")
-        self._n_batches += 1
-        self._n_tokens += self._model.count_tokens(data=batch_data)
-        self._filemanager.write(data=batch_data, span=self._current_batch_span_str)
 
     async def _process_submission(self, submission: Submission) -> Dict:
-        """Processes a single submission and its comments, returning a data dictionary."""
+        """Process a single submission and its comments and return a data dict."""
         async with self._sem:
             self._n_submissions += 1
 
@@ -239,7 +239,7 @@ class ARedditScraper:
             return submission_data
 
     async def _process_comments(self, submission: Submission, comments_list: List) -> None:
-        """Fetches all comments for a submission and appends them to a provided list."""
+        """Fetch all comments for a submission and append them to ``comments_list``."""
         # Submissions from a listing are not fully fetched: load the submission so its
         # comment forest is populated before it can be expanded. `load()` rebuilds the
         # forest, so it must be retried on its own — never re-called after `replace_more`
@@ -271,23 +271,7 @@ class ARedditScraper:
             )
 
     async def _with_retry(self, func, what: str):
-        """Awaits ``func()`` and retries on 429 (``TooManyRequests``).
-
-        Async PRAW obeys Reddit's rate limits for sequential requests, but its rate
-        limiter is not concurrency-safe, so concurrent expansion can occasionally trip a
-        429. This is reactive backoff only: it sleeps solely when Reddit returns a 429,
-        honoring the ``retry-after`` header when present.
-
-        Args:
-            func: A zero-argument callable returning a fresh awaitable on each call.
-            what: A short description of the operation, for logging.
-
-        Returns:
-            The awaited result of ``func()``.
-
-        Raises:
-            TooManyRequests: If the operation still fails after ``max_retries`` attempts.
-        """
+        """Await ``func()`` with retry/backoff when rate limited (429)."""
         for attempt in range(1, self._max_retries + 1):
             try:
                 return await func()
@@ -300,39 +284,3 @@ class ARedditScraper:
                     f"retry {attempt}/{self._max_retries - 1}."
                 )
                 await asyncio.sleep(wait)
-
-    def _wrap_up(self) -> None:
-        """Prints a summary of the completed job."""
-        end_dt = datetime.now()
-        if isinstance(self._start_dt, datetime):
-            duration = end_dt - self._start_dt
-            duration_sec = DateTime.get_seconds(td=duration)
-            duration_str = DateTime.format_timedelta(td=duration)
-        else:
-            raise RuntimeError("Start time not set.")
-
-        # Guard against division-by-zero for very fast runs.
-        duration_sec = duration_sec or 1e-9
-
-        submissions_per_min = round(self._n_submissions / duration_sec * 60, 2)
-        comments_per_min = round(self._n_comments / duration_sec * 60, 2)
-        tokens_per_min = round(self._n_tokens / duration_sec * 60, 2)
-
-        summary = {
-            "Days Captured": self._days,
-            "Duration": duration_str,
-            "Total Batches": self._n_batches,
-            "Total Submissions": self._n_submissions,
-            "Total Comments": self._n_comments,
-            "Total Tokens": self._n_tokens,
-            "Submissions per Minute": submissions_per_min,
-            "Comments per Minute": comments_per_min,
-            "Tokens per Minute": tokens_per_min,
-        }
-
-        print(f"{'-'*80}")
-        title = f"Reddit Scraper (async) Completed on {end_dt.strftime('%Y-%m-%d at %H:%M:%S')}"
-        self._printer.print_dict(data=summary, title=title)
-        print(f"{'='*80}\n")
-
-        logger.info("Async scraping job finished successfully.")

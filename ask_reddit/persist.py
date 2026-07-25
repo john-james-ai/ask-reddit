@@ -1,27 +1,42 @@
-#!/bin/env python3
-# -*- coding:utf-8 -*-
+#!/usr/bin/env python3
 # ================================================================================================ #
 # Project    : Ask Reddit                                                                          #
+# Description: Reddit Scraper.                                                                     #
 # Version    : 0.1.0                                                                               #
 # Python     : 3.13.5                                                                              #
-# Filename   : /ask_reddit/persist.py                                                              #
+# Filepath   : /ask_reddit                                                                         #
+# Filename   : persist.py                                                                          #
 # ------------------------------------------------------------------------------------------------ #
 # Author     : John James                                                                          #
-# Email      : john@variancexplained.com                                                           #
+# Email      : john@variancexplained.ai                                                            #
 # URL        : https://github.com/john-james-ai/ask-reddit/                                        #
 # ------------------------------------------------------------------------------------------------ #
-# Created    : Saturday June 21st 2025 02:41:05 pm                                                 #
-# Modified   : Monday December 29th 2025 12:21:12 pm                                               #
+# Created    : Wednesday July 22nd 2026 08:28:57 pm                                                #
+# Modified   : Saturday July 25th 2026 11:29:20 am                                                 #
 # ------------------------------------------------------------------------------------------------ #
 # License    : MIT License                                                                         #
-# Copyright  : (c) 2025 John James                                                                 #
+# Copyright  : (c) 2026 John James                                                                 #
 # ================================================================================================ #
-from typing import Any, Dict, List, Optional
+
+"""Persistence helpers for Ask Reddit.
+
+This module provides a small `FileManager` helper used to read and write
+JSON files using a consistent filename convention built from a source,
+topic, and span identifier.
+
+The module is intentionally small and focused on deterministic file path
+construction and JSON serialization; it does not provide database-style
+concurrency controls or locking.
+"""
+
 
 import json
 import logging
 import os
-from datetime import datetime
+import re
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 from ask_reddit.constants import DEFAULT_JSON_INDENT
 
@@ -31,47 +46,44 @@ logger = logging.getLogger(__name__)
 
 # ------------------------------------------------------------------------------------------------ #
 class FileManager:
-    """Manages reading and writing data to JSON files with a structured naming convention.
+    """Manage reading and writing JSON files using a consistent filename convention.
 
-    This class handles the creation of file paths and the serialization/deserialization
-    of data to and from JSON files. It standardizes filenames based on source,
-    topic, a variable span (e.g., a specific month), and an optional timestamp.
+    The `FileManager` constructs filenames from a `source`, `topic`, and
+    `span` identifier and provides helpers to read and write JSON data.
 
-    Attributes:
-        _source (str): The origin of the data (e.g., 'reddit').
-        _topic (str): The specific subject or channel (e.g., 'learnpython').
-        _file_location (str): The directory where files will be stored.
-        _timestamp (bool): If True, appends the current date to the filename.
+    Args:
+        source (str): Origin of the data (for example, 'reddit').
+        topic (str): Specific subject or channel (for example, 'learnpython').
+        file_location (str): Directory where files will be stored. Defaults to
+            ``'data'``.
+
+    Examples:
+        >>> fm = FileManager('reddit', 'learnpython', file_location='data')
+        >>> fm.create_filepath('2026-07')
+        PosixPath('data/reddit-learnpython-2026-07.json')
     """
 
-    def __init__(
-        self, source: str, topic: str, file_location: str = "data", timestamp: bool = True
-    ) -> None:
-        """Initializes the FileManager with configuration settings."""
+    def __init__(self, source: str, topic: str, file_location: str = "data") -> None:
         self._source = source
         self._topic = topic
         self._file_location = file_location
-        self._timestamp = timestamp
-        # Ensure the target directory exists
-        os.makedirs(self._file_location, exist_ok=True)
 
     def read(self, span: str) -> List[Dict[str, Any]]:
-        """Reads and parses data from a specified JSON file.
+        """Read and parse JSON data from a file constructed for `span`.
 
-        Constructs the file path using the provided span and reads the entire
-        contents of the JSON file into a Python list of dictionaries.
+        The filename is created by combining the instance `source`, `topic`,
+        and the provided `span` (for example, ``'2026-07'``).
 
         Args:
-            span (str): A specific identifier for the file, typically a
-                date string like 'YYYY-MM' or a specific keyword, used to
-                uniquely identify the file to be read.
+            span (str): Identifier for the file (for example, a date like
+                ``'YYYY-MM'``) used to construct the filename.
 
         Returns:
-            list: A list of dictionaries containing the data from the JSON file.
+            List[Dict[str, Any]]: The list of records loaded from the file.
 
         Raises:
-            FileNotFoundError: If the file at the constructed path does not exist.
-            json.JSONDecodeError: If the file content is not valid JSON.
+            FileNotFoundError: If the constructed file does not exist.
+            json.JSONDecodeError: If the file contents are not valid JSON.
         """
         filepath = self.create_filepath(span=span)
 
@@ -79,50 +91,107 @@ class FileManager:
             data = json.load(json_file)
             return data
 
-    def write(self, data: list, span: Optional[str]) -> None:
-        """Writes data to a specified JSON file.
-
-        Serializes the provided list of data into a JSON formatted string and
-        writes it to a file. The filename is constructed based on the
-        instance attributes and the provided span.
+    def write(self, data: List[Dict[str, Any]], span: str) -> None:
+        """Serialize and write `data` to the JSON file for `span`.
 
         Args:
-            data (list): The list of serializable data (e.g., dicts) to write.
-            span (str): A specific identifier for the file, typically a
-                date string like 'YYYY-MM' or a keyword, used to create the
-                filename. (Optional)
+            data (List[Dict[str, Any]]): List of serializable records to write.
+            span (str): Identifier used to construct the filename (for example,
+                a date string like ``'YYYY-MM'``).
+
+        Returns:
+            None
         """
-        filepath = self.create_filepath(span=span)
+        filepath = self.create_filepath(span=span, for_new_file=True)
+        os.makedirs(filepath.parent, exist_ok=True)
 
         # Open the file in write mode and save as json
         with open(filepath, "w", encoding="utf-8") as json_file:
             logger.info(f"Saving final data batch for '{span}'.")
             json.dump(data, json_file, indent=DEFAULT_JSON_INDENT, ensure_ascii=False)
 
-    def create_filepath(self, span: str) -> str:
-        """Constructs a standardized file path and name.
-
-        Combines the source, topic, span, and an optional timestamp to create
-        a descriptive and unique filename. It then joins this filename with the
-        base file location directory.
+    def exists(self, span: str) -> bool:
+        """Check if the JSON file for `span` exists.
 
         Args:
-            span (str): A specific identifier for the file, such as a
-                date string ('YYYY-MM') or a keyword.
+            span (str): Identifier used to construct the filename (for example,
+                a date string like ``'YYYY-MM'``).
 
         Returns:
-            str: The complete, absolute or relative path for the file.
+            bool: True if the file exists, False otherwise.
         """
-        dt = ""
-        # Note: This logic assumes if a timestamp is used for writing,
-        # the same logic must be used for reading to find the file.
-        # A fixed span like 'YYYY-MM' is often more reliable for reads.
-        if self._timestamp:
-            dt = datetime.now().strftime("%Y-%m-%d")
+        filepath = self.create_filepath(span=span)
+        return filepath.exists()
 
-        filename_parts = [self._source, self._topic, span, dt]
+    def get_months_since_last(self) -> Optional[int]:
+        """Return the month count of the most recent span already on file.
+
+        The count uses the same 1-based indexing as
+        :meth:`ask_reddit.date.DateTime.get_month_st`, where 1 is the current
+        month, 2 is the month before it, and so on. If today falls in July and
+        the most recent span on file is March, the return value is 5.
+
+        Only base span files (``{source}-{topic}-YYYY-MM.json``) are counted.
+        Timestamped rescrape siblings are ignored, since one only ever exists
+        alongside the base file it was derived from.
+
+        Returns:
+            Optional[int]: The month count of the most recent span on file, or
+                None when no span files are present.
+        """
+        prefix = f"{self._source}-{self._topic.lower()}"
+        pattern = re.compile(rf"^{re.escape(prefix)}-(\d{{4}})-(\d{{2}})\.json$")
+
+        month_indices = []
+        for filepath in Path(self._file_location).glob(f"{self._topic.lower()}/{prefix}-*.json"):
+            match = pattern.match(filepath.name)
+            if match:
+                year, month = int(match.group(1)), int(match.group(2))
+                # Absolute month index, so the comparison spans year boundaries.
+                month_indices.append(year * 12 + (month - 1))
+
+        if not month_indices:
+            return None
+
+        now = datetime.now(timezone.utc)
+        elapsed = (now.year * 12 + (now.month - 1)) - max(month_indices)
+        # Clamp to the current month: a span dated in the future would otherwise
+        # produce a count of zero or less, which is not a valid month count.
+        return max(1, elapsed + 1)
+
+    def create_filepath(self, span: str, for_new_file: bool = False) -> Path:
+        """Return the `Path` for the JSON file corresponding to `span`.
+
+        The filename returned is ``{source}-{topic}-{span}.json`` (topic is
+        lower-cased). Empty parts are filtered out so callers can pass an
+        empty span when batching is not used.
+
+        Set `for_new_file` when the caller intends to create a file rather than
+        resolve an existing one. The returned path is then guaranteed not to
+        name a file that already exists, so nothing previously captured is
+        overwritten. Callers that need to locate the original file, such as
+        `read` and `exists`, must leave `for_new_file` False.
+
+        Args:
+            span (str): Identifier used to form the filename (for example,
+                ``'YYYY-MM'``).
+            for_new_file (bool): Whether the path is destined for a file that
+                does not exist yet. Defaults to False.
+
+        Returns:
+            Path: Filesystem path for the JSON file inside `file_location`.
+        """
+
+        filename_parts = [self._source, self._topic.lower(), span]
         # Filter out the empty string from filename_parts (if not batching)
         filename = "-".join(filter(None, filename_parts)) + ".json"
 
-        filepath = os.path.join(self._file_location, filename)
+        filepath = Path(self._file_location) / self._topic.lower() / filename
+
+        # A rescrape of an in-progress month lands beside the original rather
+        # than replacing it, so no previously captured submissions are lost.
+        if for_new_file and filepath.exists():
+            stamp = datetime.now().strftime("%Y%m%dT%H%M%S")
+            filepath = filepath.with_name(f"{filepath.stem}-{stamp}{filepath.suffix}")
+
         return filepath
