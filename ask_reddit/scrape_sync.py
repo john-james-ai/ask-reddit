@@ -71,6 +71,8 @@ class RedditScraper(BaseRedditScraper[praw.Reddit]):
         months (int): Number of past months to include in the scrape.
         filemanager (FileManager): FileManager used to persist batches.
         tolerance (int): Consecutive failures tolerated before the run aborts.
+        verbose (bool): When True, progress and summary output is written to the
+            console. Errors go to stderr regardless. Logging is unaffected.
         force (bool): When True, scrape the full requested window instead of
             resuming from what is already on file. Existing files are never
             overwritten either way; a rescrape is written alongside them.
@@ -90,8 +92,9 @@ class RedditScraper(BaseRedditScraper[praw.Reddit]):
         subreddit: str,
         months: int,        
         filemanager: FileManager,
-        tolerance: int = DEFAULT_ERROR_TOLERANCE,    
-        force: bool = False,   
+        tolerance: int = DEFAULT_ERROR_TOLERANCE,
+        force: bool = False,
+        verbose: bool = False,
         **kwargs,
         
     ) -> None:
@@ -104,6 +107,7 @@ class RedditScraper(BaseRedditScraper[praw.Reddit]):
             filemanager=filemanager,
             tolerance=tolerance,
             force=force,
+            verbose=verbose,
         )
 
     @property
@@ -133,7 +137,7 @@ class RedditScraper(BaseRedditScraper[praw.Reddit]):
         # This 'for' loop is the only control loop needed. PRAW handles the pagination
         # of submissions automatically. The loop is terminated by 'break' when the
         # stop condition is met.
-        pbar = tqdm(total=None, desc="\t\tProcessing...")
+        pbar = tqdm(total=None, desc="\t\tProcessing...", disable=not self._verbose)
 
         for submission in self._scraper.subreddit(self._subreddit).new(limit=None):
             try:

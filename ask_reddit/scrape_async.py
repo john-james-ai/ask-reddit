@@ -50,12 +50,13 @@ such handling.
 """
 import asyncio
 import logging
+import sys
 from datetime import datetime, timezone
 from typing import Dict, List
 
 import asyncpraw
 from asyncpraw.models import Comment, Submission
-from asyncprawcore.exceptions import TooManyRequests
+from asyncprawcore.exceptions import Forbidden, NotFound, Redirect, TooManyRequests
 from tqdm import tqdm
 
 from ask_reddit.constants import (
@@ -91,7 +92,9 @@ class ARedditScraper(BaseRedditScraper[asyncpraw.Reddit]):
         subreddit (str): Subreddit name to scrape (e.g., 'learnpython').
         months (int): Number of past months to include in the scrape.
         filemanager (FileManager): FileManager used to persist batches.
-        tolerance (int): Consecutive error tolerance before aborting.
+        tolerance (int): Consecutive failures tolerated before the run aborts.
+        verbose (bool): When True, progress and summary output is written to the
+            console. Errors go to stderr regardless. Logging is unaffected.
         force (bool): When True, scrape the full requested window instead of
             resuming from what is already on file. Existing files are never
             overwritten either way; a rescrape is written alongside them.
@@ -116,8 +119,9 @@ class ARedditScraper(BaseRedditScraper[asyncpraw.Reddit]):
         filemanager: FileManager,
         tolerance: int = DEFAULT_ERROR_TOLERANCE,
         force: bool = False,
+        verbose: bool = False,
         *,
-        concurrency: int = DEFAULT_CONCURRENCY,        
+        concurrency: int = DEFAULT_CONCURRENCY,
         max_retries: int = DEFAULT_MAX_RETRIES,
         retry_backoff: float = DEFAULT_RETRY_BACKOFF,
     ) -> None:
@@ -130,6 +134,7 @@ class ARedditScraper(BaseRedditScraper[asyncpraw.Reddit]):
             filemanager=filemanager,
             tolerance=tolerance,
             force=force,
+            verbose=verbose,
         )
         self._concurrency = concurrency        
         self._max_retries = max_retries
@@ -154,39 +159,58 @@ class ARedditScraper(BaseRedditScraper[asyncpraw.Reddit]):
         submission_span_str = None
         aborted = False
 
-        pbar = tqdm(total=None, desc="\t\tProcessing...")
+        pbar = tqdm(total=None, desc="\t\tProcessing...", disable=not self._verbose)
 
-        subreddit = await self._scraper.subreddit(self._subreddit)
-        async for submission in subreddit.new(limit=None):
-            submission_dt = datetime.fromtimestamp(submission.created_utc, timezone.utc)
+        # A subreddit that is missing, private, quarantined, or misspelled fails here
+        # rather than at construction, since the listing is what first contacts the API.
+        # These are expected operating conditions, not defects, so they are reported as a
+        # single log line instead of an unhandled traceback.
+        try:
+            subreddit = await self._scraper.subreddit(self._subreddit)
+            async for submission in subreddit.new(limit=None):
+                submission_dt = datetime.fromtimestamp(submission.created_utc, timezone.utc)
 
-            # Stop Condition Check
-            if submission_dt < self._stop_utc:
-                logger.info("Stop condition met: Found a submission older than the target date.")
-                break
-
-            # Determine the batch span string for this submission.
-            submission_span_str = submission_dt.strftime(MONTH_SPAN_FORMAT)
-
-            # Skip spans already complete on disk without fetching comment trees.
-            # This must precede the batch boundary check below: leaving
-            # `_current_batch_span_str` untouched for skipped spans is what keeps a
-            # skipped month from triggering a flush on every one of its submissions.
-            if submission_span_str not in self._needed_spans:
-                continue
-
-            # If we've entered a new month/day, flush the previous, now-complete batch.
-            if (
-                submission_span_str != self._current_batch_span_str
-                and self._current_batch_span_str is not None
-            ):
-                aborted = await self._flush_batch(current_batch, pbar)
-                current_batch = []
-                if aborted:
+                # Stop Condition Check
+                if submission_dt < self._stop_utc:
+                    logger.info(
+                        "Stop condition met: Found a submission older than the target date."
+                    )
                     break
 
-            self._current_batch_span_str = submission_span_str
-            current_batch.append(submission)
+                # Determine the batch span string for this submission.
+                submission_span_str = submission_dt.strftime(MONTH_SPAN_FORMAT)
+
+                # Skip spans already complete on disk without fetching comment trees.
+                # This must precede the batch boundary check below: leaving
+                # `_current_batch_span_str` untouched for skipped spans is what keeps a
+                # skipped month from triggering a flush on every one of its submissions.
+                if submission_span_str not in self._needed_spans:
+                    continue
+
+                # If we've entered a new month/day, flush the previous, now-complete batch.
+                if (
+                    submission_span_str != self._current_batch_span_str
+                    and self._current_batch_span_str is not None
+                ):
+                    aborted = await self._flush_batch(current_batch, pbar)
+                    current_batch = []
+                    if aborted:
+                        break
+
+                self._current_batch_span_str = submission_span_str
+                current_batch.append(submission)
+
+        except (NotFound, Forbidden, Redirect) as e:
+            # Not marked as aborted: whatever was collected before the failure is still
+            # valid and is persisted by the final flush below.
+            message = (
+                f"Stopped scraping r/{self._subreddit}: {type(e).__name__}. "
+                f"The subreddit may not exist, be private, or be misspelled."
+            )
+            logger.error(message)
+            # Written to stderr rather than through the printer: a failed subreddit must
+            # be visible even in quiet mode, and stderr keeps stdout clean for piping.
+            print(message, file=sys.stderr)
 
         pbar.close()
 

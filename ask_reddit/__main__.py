@@ -33,9 +33,13 @@ import praw
 import typer
 from dotenv import load_dotenv
 
+import aiohttp
+
+from ask_reddit.constants import ARCHIVE_USER_AGENT
 from ask_reddit.model import GenAIModel
 from ask_reddit.persist import FileManager
 from ask_reddit.print import Printer
+from ask_reddit.scrape_archive import ArchiveRedditScraper
 from ask_reddit.scrape_async import ARedditScraper
 from ask_reddit.scrape_sync import RedditScraper
 
@@ -88,6 +92,12 @@ def setup_logging(log_filepath: str) -> None:
 
     # Add the handler to the root logger
     logger.addHandler(handler)
+
+    # The token-count client logs one INFO line per HTTP call, which is one line per batch
+    # written and nothing a run is ever diagnosed from. Warnings and errors still come
+    # through, so a genuine failure is not hidden by this.
+    for noisy in ("httpx", "httpcore"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
 
     # Also log to the console if configured to do so
     if os.getenv("LOG_TO_CONSOLE", "false").lower() == "true":
@@ -190,6 +200,7 @@ def run_sync(
     model: GenAIModel,
     printer: Printer,
     force: bool = False,
+    verbose: bool = False,
 ) -> None:
     """Run the synchronous (blocking) scraping engine.
 
@@ -205,6 +216,7 @@ def run_sync(
         printer (Printer): Printer instance for formatted output.
         force (bool): When True, scrape the full requested window rather than
             resuming from what is already on file.
+        verbose (bool): When True, print progress and the summary to the console.
 
     Raises:
         typer.Exit: If Reddit authentication fails.
@@ -222,6 +234,7 @@ def run_sync(
         months=months,
         filemanager=file_manager,
         force=force,
+        verbose=verbose,
     )
     scraper.scrape()
 
@@ -232,6 +245,8 @@ async def run_async(
     model: GenAIModel,
     printer: Printer,
     force: bool = False,
+    verbose: bool = False,
+    concurrency: Optional[int] = None,
 ) -> None:
     """Run the asynchronous scraping engine using ``asyncpraw``.
 
@@ -248,6 +263,9 @@ async def run_async(
         printer (Printer): Printer instance for formatted output.
         force (bool): When True, scrape the full requested window rather than
             resuming from what is already on file.
+        verbose (bool): When True, print progress and the summary to the console.
+        concurrency (Optional[int]): Maximum concurrent submission processors. When None,
+            the scraper's own default applies.
 
     Raises:
         typer.Exit: If async Reddit authentication fails.
@@ -256,6 +274,10 @@ async def run_async(
     if not reddit:
         logging.critical("Exiting due to failed Reddit authentication.")
         raise typer.Exit(code=1)
+
+    # Omitted rather than passed as None, so the default lives in exactly one place: the
+    # scraper's own signature.
+    overrides = {} if concurrency is None else {"concurrency": concurrency}
 
     try:
         scraper = ARedditScraper(
@@ -266,11 +288,76 @@ async def run_async(
             months=months,
             filemanager=file_manager,
             force=force,
+            verbose=verbose,
+            **overrides,
         )
         await scraper.scrape()
     finally:
         # Async PRAW requires an explicit close to release the aiohttp session.
         await reddit.close()
+
+async def run_archive(
+    subreddit: str,
+    months: int,
+    file_manager: FileManager,
+    model: GenAIModel,
+    printer: Printer,
+    force: bool = False,
+    verbose: bool = False,
+    concurrency: Optional[int] = None,
+    window_hours: Optional[int] = None,
+) -> None:
+    """Run the archive scraping engine against Arctic Shift.
+
+    Unlike the live engines this needs no Reddit credentials, since it never touches
+    Reddit's API. It is the only engine that can reach submissions older than roughly the
+    last thousand in a subreddit's listing, which for a busy subreddit is about a week.
+
+    Args:
+        subreddit (str): Name of the subreddit to scrape.
+        months (int): Number of past months to include.
+        file_manager (FileManager): FileManager used to persist results.
+        model (GenAIModel): Generative AI model helper used by the scraper.
+        printer (Printer): Printer instance for formatted output.
+        force (bool): When True, scrape the full requested window rather than
+            resuming from what is already on file.
+        verbose (bool): When True, print progress and the summary to the console.
+        concurrency (Optional[int]): Maximum concurrent archive requests. When None, the
+            scraper's own default applies.
+        window_hours (Optional[int]): Size of the time slices a span is cut into. When
+            None, the scraper's own default applies.
+    """
+    # Omitted rather than passed as None, so each default lives in exactly one place: the
+    # scraper's own signature.
+    overrides = {
+        key: value
+        for key, value in (("concurrency", concurrency), ("window_hours", window_hours))
+        if value is not None
+    }
+    # The archive answers the default aiohttp agent with a 403, so the header is required
+    # rather than merely polite.
+    headers = {"User-Agent": ARCHIVE_USER_AGENT}
+    async with aiohttp.ClientSession(headers=headers) as session:
+        scraper = ArchiveRedditScraper(
+            scraper=session,
+            model=model,
+            printer=printer,
+            subreddit=subreddit,
+            months=months,
+            filemanager=file_manager,
+            force=force,
+            verbose=verbose,
+            **overrides,
+        )
+        await scraper.scrape()
+        # A run that captured nothing must not exit 0, or a batch loop over many
+        # subreddits will walk straight past the failure.
+        if scraper.failed:
+            logging.critical(
+                f"Archive scrape of r/{subreddit} captured nothing; every span failed."
+            )
+            raise typer.Exit(code=1)
+
 
 @app.command()
 def main(
@@ -286,16 +373,50 @@ def main(
         "-m",
         help="The number of past months for which data shall be extracted.",
     ),
+    archive: bool = typer.Option(
+        True,
+        "--archive/--live",
+        help="Read from the Arctic Shift archive (default) or from Reddit's API. The live "
+        "API caps every listing at ~1000 submissions regardless of --month, so --live "
+        "reaches only about a week of a busy subreddit. The archive has no such cap and "
+        "needs no Reddit credentials.",
+    ),
     async_mode: bool = typer.Option(
         True,
         "--async/--sync",
-        help="Use the fast asynchronous scraper (default) or the synchronous fallback.",
+        help="With --live, choose the asynchronous scraper (default) or the synchronous "
+        "fallback. Ignored by the archive engine, which is always asynchronous.",
     ),
     directory: Optional[str] = typer.Option(
         None,
         "--directory",
         "-d",
         help="The directory into which the scraped files are stored.",
+    ),
+    concurrency: Optional[int] = typer.Option(
+        None,
+        "--concurrency",
+        "-c",
+        min=1,
+        help="Maximum requests in flight. Applies to the archive and --live --async "
+        "engines; the --sync engine is serial and ignores it. Defaults to the engine's "
+        "own setting.",
+    ),
+    window_hours: Optional[int] = typer.Option(
+        None,
+        "--window-hours",
+        "-w",
+        min=1,
+        help="Archive engine only: size of the time slices each month is cut into. "
+        "Pagination is serial within a slice, so this bounds how much of --concurrency "
+        "can be used. Affects speed only, not results.",
+    ),
+    verbose: bool = typer.Option(
+        False,
+        "--verbose/--quiet",
+        "-v",
+        help="Print progress and the run summary to the console. Errors always go to "
+        "stderr, and logging is unaffected.",
     ),
     force: bool = typer.Option(
         False,
@@ -313,13 +434,21 @@ def main(
     Args:
         subreddit (str): Subreddit name to scrape (required).
         months (int): Number of past months to retrieve (default: 1).
-        async_mode (bool): Use the async scraper when True, otherwise use the
-            synchronous fallback.
+        archive (bool): Read from the Arctic Shift archive rather than Reddit's API.
+            The default, and the only engine that can reach past Reddit's ~1000-item
+            listing cap. Takes precedence over ``async_mode``.
+        async_mode (bool): With ``archive`` disabled, use the async scraper when True and
+            the synchronous fallback otherwise. Ignored when ``archive`` is set.
         directory (Optional[str]): Output directory for scraped files. When
             omitted, the ``FILE_LOCATION`` environment variable or ``'data'``
             is used.
         force (bool): When True, scrape the full requested window rather than
             resuming from what is already on file.
+        verbose (bool): When True, print progress and the summary to the console.
+        concurrency (Optional[int]): Maximum requests in flight, for the engines that
+            make more than one at a time. None leaves the engine's own default.
+        window_hours (Optional[int]): Archive engine only; size of the time slices a
+            month is cut into. None leaves the engine's own default.
     """
 
     # Setup Logging
@@ -329,7 +458,7 @@ def main(
     # Acknowledge command line invocation and parameters
     logging.info(
         f"CLI started for r/{subreddit}, months={months}, "
-        f"engine={'async' if async_mode else 'sync'}"
+        f"engine={'archive' if archive else ('async' if async_mode else 'sync')}"
     )
 
     # Instantiate the file manager responsible for persisting submissions to json
@@ -342,9 +471,25 @@ def main(
     model = GenAIModel()
 
     # Instantiate the printer object
-    printer = Printer()
+    printer = Printer(verbose=verbose)
 
-    if async_mode:
+    if archive:
+        asyncio.run(
+            run_archive(
+                subreddit=subreddit,
+                months=months,
+                file_manager=file_manager,
+                model=model,
+                printer=printer,
+                force=force,
+                verbose=verbose,
+                concurrency=concurrency,
+                window_hours=window_hours,
+            )
+        )
+    elif async_mode:
+        if window_hours is not None:
+            logging.warning("--window-hours applies to the archive engine only; ignoring.")
         asyncio.run(
             run_async(
                 subreddit=subreddit,
@@ -353,9 +498,13 @@ def main(
                 model=model,
                 printer=printer,
                 force=force,
+                verbose=verbose,
+                concurrency=concurrency,
             )
         )
     else:
+        if concurrency is not None or window_hours is not None:
+            logging.warning("--concurrency and --window-hours do not apply to --sync; ignoring.")
         run_sync(
             subreddit=subreddit,
             months=months,
@@ -363,6 +512,7 @@ def main(
             model=model,
             printer=printer,
             force=force,
+            verbose=verbose,
         )
 
 

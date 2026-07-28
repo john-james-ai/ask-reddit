@@ -24,6 +24,7 @@ from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import Any, Dict, Generic, List, Set, TypeVar
 
+import aiohttp
 import asyncpraw
 import praw
 
@@ -38,9 +39,11 @@ logger = logging.getLogger(__name__)
 # ------------------------------------------------------------------------------------------------ #
 
 
-# Constrained rather than bound: exactly two clients are permitted, and a bound would
-# admit any common supertype of the two.
-TReddit = TypeVar("TReddit", praw.Reddit, asyncpraw.Reddit)
+# Constrained rather than bound: only these clients are permitted, and a bound would
+# admit any common supertype of them. `aiohttp.ClientSession` is the client for the
+# archive engine, which talks to a plain HTTP archive rather than Reddit's own API and
+# so has no PRAW object to hold.
+TReddit = TypeVar("TReddit", praw.Reddit, asyncpraw.Reddit, aiohttp.ClientSession)
 
 
 class BaseRedditScraper(ABC, Generic[TReddit]):
@@ -60,6 +63,8 @@ class BaseRedditScraper(ABC, Generic[TReddit]):
         months (int): Number of past months requested, counting the current month.
         filemanager (FileManager): Persistence helper for the batch files.
         tolerance (int): Consecutive failures tolerated before a run aborts.
+        verbose (bool): When True, progress and summary output is written to the
+            console. Errors are reported on stderr regardless. Logging is unaffected.
         force (bool): When True, scrape the full requested window instead of
             resuming from what is already on file. Existing files are never
             overwritten either way; a rescrape is written alongside them.
@@ -75,6 +80,7 @@ class BaseRedditScraper(ABC, Generic[TReddit]):
         filemanager: FileManager,
         tolerance: int = DEFAULT_ERROR_TOLERANCE,
         force: bool = False,
+        verbose: bool = False,
     ) -> None:
         self._scraper: TReddit = scraper
         self._model = model
@@ -84,6 +90,7 @@ class BaseRedditScraper(ABC, Generic[TReddit]):
         self._filemanager = filemanager
         self._tolerance = tolerance
         self._force = force
+        self._verbose = verbose
 
         # --- State and Statistics ---
         self._n_batches = 0
@@ -118,20 +125,22 @@ class BaseRedditScraper(ABC, Generic[TReddit]):
     # -------------------------------------------------------------------------------------------- #
     def _startup(self) -> None:
         """Initializes the scraping process."""
-        print(f"\n{'='*80}")
+        self._printer.print_rule("=")
         self._start_dt = datetime.now()
         logger.info(f"Starting {self.__class__.__name__} for r/{self._subreddit} for the last {self._months} months.")
         # Print summary information
         title = f"{self.__class__.__name__} Started on {self._start_dt.strftime('%Y-%m-%d at %H:%M:%S')}"        
 
         self._printer.print_dict(title=title, data=self.description)
-        print(f"{'-'*80}")
+        self._printer.print_rule("-")
 
     # -------------------------------------------------------------------------------------------- #
     def _process_batch(self, current_batch_data: List) -> None:
         """Logs new batch, counts tokens in batch and saves to file."""
 
-        logger.info(f"Saving batch for '{self._current_batch_span_str}'.")
+        # Named, because a batch run puts many subreddits through one log file and a bare
+        # span label cannot be attributed to any of them afterwards.
+        logger.info(f"Saving batch for r/{self._subreddit} '{self._current_batch_span_str}'.")
         self._n_batches += 1
         # Count number of tokens
         self._n_tokens += self._model.count_tokens(data=current_batch_data)
@@ -172,12 +181,15 @@ class BaseRedditScraper(ABC, Generic[TReddit]):
             "Tokens per Minute": round(self._n_tokens / duration_sec * 60, 2),
         }
 
-        print(f"{'-'*80}")
+        self._printer.print_rule("-")
         title = f"{self.__class__.__name__} Completed on {end_dt.strftime('%Y-%m-%d at %H:%M:%S')}"
         self._printer.print_dict(data=summary, title=title)
-        print(f"{'='*80}\n")
+        self._printer.print_rule("=")
 
-        logger.info(f"{self.__class__.__name__} finished successfully.")
+        # Deliberately not "successfully": every engine reaches here after aborting on the
+        # failure tolerance as well as after a clean run, so this line cannot speak to the
+        # outcome. Engines that can partially fail report that themselves.
+        logger.info(f"{self.__class__.__name__} finished.")
 
     # -------------------------------------------------------------------------------------------- #
     def _compute_needed_spans(self) -> Set[str]:

@@ -56,12 +56,31 @@ class Printer:
     This class provides methods to print content in a visually appealing format, including support for structured data
     like dictionaries and pandas DataFrames.
 
+    Every method here is gated on `verbose`. When it is False the printer writes nothing
+    to stdout, which is what keeps a batch run over hundreds of subreddits quiet without
+    scattering conditionals through the scrapers. Logging is independent and always
+    records in full, and callers that must be seen regardless (errors) write to stderr
+    directly rather than going through this class.
+
     Args:
         width (int, optional): The width of the printed content, in characters. Defaults to 80.
+        verbose (bool, optional): Whether to write to stdout at all. Defaults to True, so
+            existing callers keep their output.
     """
 
-    def __init__(self, width: int = 80) -> None:
+    def __init__(self, width: int = 80, verbose: bool = True) -> None:
         self._width = width
+        self._verbose = verbose
+
+    def print_rule(self, char: str = "=") -> None:
+        """Prints a full width horizontal rule.
+
+        Args:
+            char (str): The character the rule is drawn with.
+        """
+        if not self._verbose:
+            return
+        print(char * self._width)
 
     def print_title(self, title: str) -> None:
         """
@@ -70,6 +89,8 @@ class Printer:
         Args:
             title (str): The title text to be printed.
         """
+        if not self._verbose:
+            return
         breadth = self._width - 2
         header = f"\n\n# {breadth * '='} #\n"
         header += f"#{title.center(self._width, ' ')}#\n"
@@ -84,6 +105,8 @@ class Printer:
             subtitle (str): The subtitle text to be printed.
             linestyle (str, optional): The character used for underlining the subtitle. Defaults to "-".
         """
+        if not self._verbose:
+            return
         s = f"\n\n{subtitle.center(self._width, ' ')}"
         s += f"\n{(linestyle * len(subtitle)).center(self._width, ' ')}"
         print(s)
@@ -96,6 +119,8 @@ class Printer:
             k (str): The key to be printed.
             v (Union[str, int, float]): The value associated with the key. If numeric, it will be formatted with commas.
         """
+        if not self._verbose:
+            return
         breadth = int(self._width / 2)
         if isinstance(v, IMMUTABLE_TYPES):
             if isinstance(v, (float, int)):
@@ -107,6 +132,8 @@ class Printer:
         """
         Prints a decorative trailer to conclude a section.
         """
+        if not self._verbose:
+            return
         breadth = self._width - 4
         trailer = f"\n\n# {breadth * '='} #\n"
         print(trailer)
@@ -119,6 +146,8 @@ class Printer:
             centered (bool): Whether to center the string.
 
         """
+        if not self._verbose:
+            return
         if centered:
             string = string.center(self._width, " ")
         print(string)
@@ -132,6 +161,8 @@ class Printer:
             data (dict): The dictionary containing key-value pairs to print.
             text_col (str, optional): A specific key in the dictionary whose value will be printed as a text block.
         """
+        if not self._verbose:
+            return
         text = None
         breadth = int(self._width / 2)
         title_lines = title.split("\n")
