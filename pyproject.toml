@@ -5,7 +5,7 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry]
 name = "ask-reddit"
-version = "0.1.0"
+version = "0.2.1"
 description = "A Python scraper using PRAW to extract Reddit comments for NLP and GPT model analysis. This project aims to collect comprehensive comment data from Reddit threads."
 readme = "README.md"
 authors = ["john-james-ai <john.james.ai.studio@gmail.com>"]

@@ -41,7 +41,7 @@ logger = logging.getLogger(__name__)
 
 # Constrained rather than bound: only these clients are permitted, and a bound would
 # admit any common supertype of them. `aiohttp.ClientSession` is the client for the
-# archive engine, which talks to a plain HTTP archive rather than Reddit's own API and
+# Arctic Shift engine, which talks to a plain HTTP service rather than Reddit's own API and
 # so has no PRAW object to hold.
 TReddit = TypeVar("TReddit", praw.Reddit, asyncpraw.Reddit, aiohttp.ClientSession)
 

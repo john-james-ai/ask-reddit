@@ -4,7 +4,7 @@
 # Project    : Ask Reddit                                                                          #
 # Version    : 0.1.0                                                                               #
 # Python     : 3.13.5                                                                              #
-# Filename   : /ask_reddit/scrape_archive.py                                                       #
+# Filename   : /ask_reddit/scrape_arcticshift.py                                                       #
 # ------------------------------------------------------------------------------------------------ #
 # Author     : John James                                                                          #
 # Email      : john@variancexplained.ai                                                            #
@@ -16,19 +16,19 @@
 # License    : MIT License                                                                         #
 # Copyright  : (c) 2026 John James                                                                 #
 # ================================================================================================ #
-"""Archive Scrape Module.
+"""Arctic Shift Scrape Module.
 
 A third engine alongside :mod:`ask_reddit.scrape_sync` and :mod:`ask_reddit.scrape_async`,
-reading from the Arctic Shift archive rather than from Reddit itself. It exists because the
+reading from the Arctic Shift rather than from Reddit itself. It exists because the
 other two cannot reach the data: every Reddit listing endpoint is capped at roughly 1000
 items, so ``subreddit.new(limit=None)`` returns about a week of a busy subreddit no matter
-how many months are requested. The archive is queried by time range and has no such cap.
+how many months are requested. Arctic Shift is queried by time range and has no such cap.
 
 The shape of the work is inverted relative to the live engines. Those walk one listing
 newest-first and discover each batch boundary as they go; here the span boundaries are known
 up front, so each needed month is fetched directly and no walk is required.
 
-Two properties of the archive drive the rest of the design:
+Two properties of Arctic Shift drive the rest of the design:
 
 Comments arrive as a flat stream keyed by ``link_id`` rather than as a tree, so there is no
 "load more comments" node and nothing corresponding to ``replace_more``. Whole windows of
@@ -42,23 +42,28 @@ engine the semaphore is the only thing pacing the run.
 """
 import asyncio
 import logging
+import random
 import sys
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
-from typing import Any, Callable, Dict, List, MutableMapping, Optional, Tuple
+from typing import Any, AsyncIterator, Callable, Dict, List, MutableMapping, Optional, Tuple
 
 import aiohttp
 from tqdm import tqdm
 
 from ask_reddit.constants import (
-    ARCHIVE_BASE_URL,
-    ARCHIVE_MAX_BACKOFF,
-    ARCHIVE_PAGE_LIMIT,
-    ARCHIVE_THROTTLE_STATUS,
-    ARCHIVE_WINDOW_HOURS,
-    DEFAULT_ARCHIVE_CONCURRENCY,
+    ARCTICSHIFT_HOLD_ROUNDS,
+    ARCTICSHIFT_MAX_HOLD_ROUNDS,
+    ARCTICSHIFT_BASE_URL,
+    ARCTICSHIFT_INITIAL_CONCURRENCY,
+    ARCTICSHIFT_MAX_BACKOFF,
+    ARCTICSHIFT_PAGE_LIMIT,
+    ARCTICSHIFT_THROTTLE_STATUS,
+    ARCTICSHIFT_WINDOW_HOURS,
+    DEFAULT_ARCTICSHIFT_CONCURRENCY,
+    DEFAULT_ARCTICSHIFT_MAX_RETRIES,
+    DEFAULT_ARCTICSHIFT_TOLERANCE,
     DEFAULT_COMMENT_GRACE_DAYS,
-    DEFAULT_ERROR_TOLERANCE,
-    DEFAULT_MAX_RETRIES,
     DEFAULT_RETRY_BACKOFF,
 )
 from ask_reddit.date import DateTime
@@ -71,9 +76,118 @@ from ask_reddit.scrape import BaseRedditScraper
 logger = logging.getLogger(__name__)
 # ------------------------------------------------------------------------------------------------ #
 
-# Authors and bodies the archive records as removed. The live engines skip these implicitly,
+# Authors and bodies Arctic Shift records as removed. The live engines skip these implicitly,
 # since PRAW reports a deleted author as None; here they arrive as literal strings.
 REMOVED_MARKERS = frozenset({"[deleted]", "[removed]"})
+
+
+class EquilibriumLimiter:
+    """Search for the number of in-flight requests Arctic Shift will sustain, then hold it.
+
+    Arctic Shift publishes ``x-ratelimit-reset`` but no remaining count, so there is no
+    budget to divide and no safe concurrency to compute ahead of time. Capacity is shared
+    with every other user and moves minute to minute, so it has to be found by feel.
+
+    The rule is the sailor's, easing a headsail downwind: let it out gently until the luff
+    shows, pull in one notch, and cleat it. Check again later by easing out one more notch;
+    if it luffs again, come back and sit longer before the next check. Each repeat luff at a
+    level already known to be too far doubles the wait, so the limiter converges on the
+    equilibrium and stays there instead of hunting around it.
+
+    This is deliberately not AIMD. Congestion control halves on loss and climbs again
+    forever, because its goal is to keep yielding so competing flows get a fair share. There
+    is nothing to be fair to here and no reason to keep giving ground: the goal is to find
+    one level and work at it. Approaching from below is what makes the gentle step correct,
+    since the limiter is never wildly over and never needs a violent correction.
+
+    Args:
+        ceiling (int): Never exceed this many in flight. The user's ``--concurrency``.
+        initial (int): Where the limiter opens, below any plausible equilibrium.
+        floor (int): Never drop below this, so a run cannot stall entirely.
+    """
+
+    def __init__(self, ceiling: int, initial: int, floor: int = 1) -> None:
+        self._ceiling = max(1, ceiling)
+        self._floor = max(1, min(floor, self._ceiling))
+        self._limit = max(self._floor, min(initial, self._ceiling))
+        self._in_flight = 0
+        self._successes = 0
+        # Clean rounds still owed before the next upward probe.
+        self._hold_remaining = 0
+        self._hold_rounds = ARCTICSHIFT_HOLD_ROUNDS
+        # The limit that was in force at the last luff, so a repeat at the same level can
+        # be told from a luff at a new one.
+        self._last_luff_at: Optional[int] = None
+        # Bumped on every decrease. A request carries the epoch it was issued under, so a
+        # failure reported by a request that was already in flight when the cut happened
+        # can be ignored. Without it one luff fails every in-flight request at once and
+        # steps down once per failure, walking the limit to the floor for a single event.
+        self._epoch = 0
+        self._cond = asyncio.Condition()
+        # Reported per span, so a run can say where it settled and how hard it looked.
+        self.luffs = 0
+        self.low_water = self._limit
+        self.high_water = self._limit
+
+    @property
+    def limit(self) -> int:
+        """The current in-flight ceiling."""
+        return self._limit
+
+    @property
+    def holding(self) -> bool:
+        """True while the limiter is cleated and not probing upward."""
+        return self._hold_remaining > 0
+
+    @asynccontextmanager
+    async def slot(self) -> AsyncIterator[int]:
+        """Hold one in-flight slot, yielding the epoch the request is issued under."""
+        async with self._cond:
+            while self._in_flight >= self._limit:
+                await self._cond.wait()
+            self._in_flight += 1
+            epoch = self._epoch
+        try:
+            yield epoch
+        finally:
+            async with self._cond:
+                self._in_flight -= 1
+                self._cond.notify()
+
+    async def on_success(self) -> None:
+        """Record a clean response; ease out by one once the hold has been served."""
+        async with self._cond:
+            self._successes += 1
+            if self._successes < self._limit:
+                return
+            # A full round at the current width came back clean.
+            self._successes = 0
+            if self._hold_remaining > 0:
+                self._hold_remaining -= 1
+                return
+            if self._limit < self._ceiling:
+                self._limit += 1
+                self.high_water = max(self.high_water, self._limit)
+                self._cond.notify()
+
+    async def on_throttle(self, epoch: int) -> None:
+        """Record a luff: come in one notch and cleat, at most once per epoch."""
+        async with self._cond:
+            # Issued before the last cut, so this failure is already accounted for.
+            if epoch != self._epoch:
+                return
+            self.luffs += 1
+            if self._last_luff_at == self._limit:
+                # Already known to be too far. Sit twice as long before looking again.
+                self._hold_rounds = min(self._hold_rounds * 2, ARCTICSHIFT_MAX_HOLD_ROUNDS)
+            else:
+                self._hold_rounds = ARCTICSHIFT_HOLD_ROUNDS
+            self._last_luff_at = self._limit
+            self._hold_remaining = self._hold_rounds
+            self._limit = max(self._floor, self._limit - 1)
+            self.low_water = min(self.low_water, self._limit)
+            self._successes = 0
+            self._epoch += 1
 
 
 class _SubredditLog(logging.LoggerAdapter):
@@ -92,30 +206,32 @@ class _SubredditLog(logging.LoggerAdapter):
         return f"[r/{subreddit}] {msg}", kwargs
 
 
-class ArchiveRedditScraper(BaseRedditScraper[aiohttp.ClientSession]):
-    """Scrape submissions and comments for a subreddit from the Arctic Shift archive.
+class ArcticShiftScraper(BaseRedditScraper[aiohttp.ClientSession]):
+    """Scrape submissions and comments for a subreddit from the Arctic Shift.
 
     Output is identical in schema and batching to the live engines, so files written here
     are interchangeable with theirs. What differs is reach: the live engines are bounded by
     Reddit's listing cap and request quota, while this one is bounded only by what the
     archive holds.
 
-    The archive trails the live site by roughly an hour, so the current month is still
+    Arctic Shift trails the live site by roughly an hour, so the current month is still
     better served by the async engine. Everything behind it is only reachable here.
 
     Args:
-        scraper (aiohttp.ClientSession): Open HTTP session used for archive requests. The
+        scraper (aiohttp.ClientSession): Open HTTP session used for Arctic Shift requests. The
             caller owns the session and is responsible for closing it.
         model (GenAIModel): Generative AI helper used for token accounting.
         printer (Printer): Printer instance for formatted summaries.
         subreddit (str): Subreddit name to scrape (e.g., 'ChatGPT').
         months (int): Number of past months to include in the scrape.
         filemanager (FileManager): FileManager used to persist batches.
-        tolerance (int): Consecutive span failures tolerated before the run aborts.
+        tolerance (int): Consecutive span failures tolerated before the run aborts. A
+            failure here is a whole span rather than one submission, and a span costs
+            nothing to retry on a later run, so this is far higher than the live engines'.
         force (bool): When True, scrape the full requested window instead of resuming
             from what is already on file.
         verbose (bool): When True, progress and summary output is written to the console.
-        concurrency (int): Maximum concurrent archive requests.
+        concurrency (int): Maximum concurrent Arctic Shift requests.
         max_retries (int): Number of attempts for a retriable request.
         retry_backoff (float): Base backoff seconds used when throttled.
         comment_grace_days (int): Days past the end of a span to keep collecting comments,
@@ -126,7 +242,7 @@ class ArchiveRedditScraper(BaseRedditScraper[aiohttp.ClientSession]):
 
     Examples:
         >>> async with aiohttp.ClientSession() as session:
-        ...     scraper = ArchiveRedditScraper(scraper=session, model=model, printer=printer,
+        ...     scraper = ArcticShiftScraper(scraper=session, model=model, printer=printer,
         ...                                    subreddit='ChatGPT', months=18,
         ...                                    filemanager=file_manager)
         ...     await scraper.scrape()
@@ -140,15 +256,15 @@ class ArchiveRedditScraper(BaseRedditScraper[aiohttp.ClientSession]):
         subreddit: str,
         months: int,
         filemanager: FileManager,
-        tolerance: int = DEFAULT_ERROR_TOLERANCE,
+        tolerance: int = DEFAULT_ARCTICSHIFT_TOLERANCE,
         force: bool = False,
         verbose: bool = False,
         *,
-        concurrency: int = DEFAULT_ARCHIVE_CONCURRENCY,
-        max_retries: int = DEFAULT_MAX_RETRIES,
+        concurrency: int = DEFAULT_ARCTICSHIFT_CONCURRENCY,
+        max_retries: int = DEFAULT_ARCTICSHIFT_MAX_RETRIES,
         retry_backoff: float = DEFAULT_RETRY_BACKOFF,
         comment_grace_days: int = DEFAULT_COMMENT_GRACE_DAYS,
-        window_hours: int = ARCHIVE_WINDOW_HOURS,
+        window_hours: int = ARCTICSHIFT_WINDOW_HOURS,
         **kwargs,
     ) -> None:
         super().__init__(
@@ -167,7 +283,9 @@ class ArchiveRedditScraper(BaseRedditScraper[aiohttp.ClientSession]):
         self._retry_backoff = retry_backoff
         self._comment_grace = timedelta(days=comment_grace_days)
         self._window_hours = window_hours
-        self._sem = asyncio.Semaphore(concurrency)
+        self._limiter = EquilibriumLimiter(
+            ceiling=concurrency, initial=min(ARCTICSHIFT_INITIAL_CONCURRENCY, concurrency)
+        )
         # Comments whose submission falls outside the span being assembled. Counted rather
         # than dropped silently, so a run can report how much it could not attach.
         self._n_orphan_comments = 0
@@ -192,14 +310,21 @@ class ArchiveRedditScraper(BaseRedditScraper[aiohttp.ClientSession]):
         return {
             "Subreddit": f"r/{self._subreddit}",
             "Time Period": f"Last {self._months} months",
-            "Source": "Arctic Shift archive",
-            "Concurrency": self._concurrency,
+            "Source": "Arctic Shift",
+            "Concurrency": f"{self._limiter.limit} (adaptive, max {self._concurrency})",
             "Window": f"{self._window_hours}h",
         }
 
     async def scrape(self) -> None:
-        """Fetch every needed span from the archive and persist each as a batch."""
+        """Fetch every needed span from Arctic Shift and persist each as a batch."""
         self._startup()
+        # Named explicitly, because the log is otherwise silent about where the data came
+        # from: a clean run mentions Arctic Shift nowhere, and the URL surfaces only by
+        # accident inside error messages. A corpus is worth knowing the provenance of.
+        self._log.info(
+            f"Source: Arctic Shift ({ARCTICSHIFT_BASE_URL}) | window {self._window_hours}h "
+            f"| concurrency {self._limiter.limit} (adaptive, max {self._concurrency})"
+        )
         pbar = tqdm(total=None, desc="\t\tProcessing...", disable=not self._verbose)
 
         # Newest span first, matching the order the live engines walk their listing, so a
@@ -238,8 +363,10 @@ class ArchiveRedditScraper(BaseRedditScraper[aiohttp.ClientSession]):
                 throttled = self._n_throttled - throttled_before
                 if throttled:
                     self._log.warning(
-                        f"Span '{span}': {throttled} request(s) throttled and retried. "
-                        f"Lower --concurrency if this is frequent."
+                        f"Span '{span}': {throttled} request(s) throttled and retried; "
+                        f"settled at concurrency {self._limiter.limit} after "
+                        f"{self._limiter.luffs} luff(s) (low {self._limiter.low_water}, "
+                        f"high {self._limiter.high_water})."
                     )
 
             self._consecutive_failures = 0
@@ -262,7 +389,7 @@ class ArchiveRedditScraper(BaseRedditScraper[aiohttp.ClientSession]):
 
         def to_submission(raw: Dict[str, Any]) -> Optional[Dict]:
             # The window bounds are enforced here rather than trusted from the query, so
-            # the batch is correct regardless of whether the archive treats `before` as
+            # the batch is correct regardless of whether Arctic Shift treats `before` as
             # inclusive. Without this a post at exactly midnight could land in two files.
             created = raw.get("created_utc", 0)
             if not lo <= created < hi:
@@ -343,7 +470,7 @@ class ArchiveRedditScraper(BaseRedditScraper[aiohttp.ClientSession]):
         end: datetime,
         mapper: Callable[[Dict[str, Any]], Optional[Any]],
     ) -> List[Any]:
-        """Return every mapped record the archive holds in ``[start, end)``.
+        """Return every mapped record Arctic Shift holds in ``[start, end)``.
 
         Both ``after`` and ``before`` are exclusive, so the window is expressed as
         ``(start - 1, end)`` to make it half-open.
@@ -368,7 +495,7 @@ class ArchiveRedditScraper(BaseRedditScraper[aiohttp.ClientSession]):
                     "subreddit": self._subreddit,
                     "after": str(after),
                     "before": str(end_ts),
-                    "limit": str(ARCHIVE_PAGE_LIMIT),
+                    "limit": str(ARCTICSHIFT_PAGE_LIMIT),
                     "sort": "asc",
                 },
             )
@@ -386,7 +513,7 @@ class ArchiveRedditScraper(BaseRedditScraper[aiohttp.ClientSession]):
                     records.append(record)
 
             # A short page means the window is exhausted.
-            if len(page) < ARCHIVE_PAGE_LIMIT:
+            if len(page) < ARCTICSHIFT_PAGE_LIMIT:
                 return records
 
             last_ts = page[-1]["created_utc"]
@@ -398,7 +525,7 @@ class ArchiveRedditScraper(BaseRedditScraper[aiohttp.ClientSession]):
                 after = last_ts - 1
             else:
                 self._log.warning(
-                    f"More than {ARCHIVE_PAGE_LIMIT} records share created_utc={last_ts} "
+                    f"More than {ARCTICSHIFT_PAGE_LIMIT} records share created_utc={last_ts} "
                     f"in r/{self._subreddit}; stepping past it, so some are not captured."
                 )
                 after = last_ts
@@ -407,27 +534,37 @@ class ArchiveRedditScraper(BaseRedditScraper[aiohttp.ClientSession]):
     async def _request(self, path: str, params: Dict[str, str]) -> List[Dict]:
         """Perform one archive request, retrying only what is worth retrying.
 
-        A 5xx is a transient server fault and a 429 is ordinary throttling. The archive
+        A 5xx is a transient server fault and a 429 is ordinary throttling. Arctic Shift
         also answers with 422 and ``"Timeout. Maybe slow down a bit"`` when too many
         requests are open at once, so that status means back off here rather than carrying
         its usual sense of a malformed request. Every other 4xx really is malformed and
         would fail identically however often it were repeated, so it is raised at once
         rather than burning the retry budget.
         """
-        url = f"{ARCHIVE_BASE_URL}/{path}"
-        retriable = {ARCHIVE_THROTTLE_STATUS, 429}
+        url = f"{ARCTICSHIFT_BASE_URL}/{path}"
+        retriable = {ARCTICSHIFT_THROTTLE_STATUS, 429}
         for attempt in range(1, self._max_retries + 1):
             # Exponential rather than linear: under a sustained 429 every in-flight
             # request retries together, and a linear ramp has them all arrive again while
             # the limit is still tripped, burning the whole budget in seconds.
-            wait = min(self._retry_backoff * 2 ** (attempt - 1), ARCHIVE_MAX_BACKOFF)
+            ceiling = min(self._retry_backoff * 2 ** (attempt - 1), ARCTICSHIFT_MAX_BACKOFF)
+            # Jittered, because a bare exponential keeps every worker in lockstep: they
+            # were throttled together, so they wake together and re-trip the limit as one.
+            # Spreading them across the interval is what actually lets the window drain.
+            wait = random.uniform(ceiling / 2, ceiling)
             try:
-                async with self._sem:
+                async with self._limiter.slot() as epoch:
                     async with self._scraper.get(url, params=params) as response:
                         if response.status not in retriable and response.status < 500:
                             response.raise_for_status()
                             payload = await response.json()
+                            # Widening is driven from here rather than from the caller, so
+                            # only responses the service actually served count as headroom.
+                            await self._limiter.on_success()
                             return payload.get("data", [])
+                        # Reported before the retry decision, so the limiter narrows even
+                        # on the attempt that goes on to raise.
+                        await self._limiter.on_throttle(epoch)
                         if attempt == self._max_retries:
                             response.raise_for_status()
                         retry_after = response.headers.get("Retry-After")
@@ -435,25 +572,26 @@ class ArchiveRedditScraper(BaseRedditScraper[aiohttp.ClientSession]):
                             wait = float(retry_after)
                         self._n_throttled += 1
                         self._log.debug(
-                            f"Archive returned {response.status} for {path}; sleeping "
-                            f"{wait:.1f}s before retry {attempt}/{self._max_retries - 1}."
+                            f"Arctic Shift returned {response.status} for {path}; limit now "
+                            f"{self._limiter.limit}; sleeping {wait:.1f}s before retry "
+                            f"{attempt}/{self._max_retries - 1}."
                         )
             except (aiohttp.ClientConnectionError, asyncio.TimeoutError) as e:
                 if attempt == self._max_retries:
                     raise
                 self._log.debug(
-                    f"Archive request to {path} failed ({type(e).__name__}: {e}); sleeping "
+                    f"Arctic Shift request to {path} failed ({type(e).__name__}: {e}); sleeping "
                     f"{wait:.1f}s before retry {attempt}/{self._max_retries - 1}."
                 )
-            # Slept outside the semaphore so a backing-off request does not hold a slot
-            # that a healthy one could be using.
+            # Slept outside the limiter so a backing-off request does not hold a slot that
+            # a healthy one could be using.
             await asyncio.sleep(wait)
 
         return []
 
     # -------------------------------------------------------------------------------------------- #
     def _build_submission(self, raw: Dict[str, Any]) -> Dict:
-        """Map an archive submission onto the schema the live engines emit.
+        """Map an Arctic Shift submission onto the schema the live engines emit.
 
         ``created_utc`` is carried alongside the published fields so the batch can be
         ordered newest-first, and is stripped again before the batch is written.
@@ -469,7 +607,7 @@ class ArchiveRedditScraper(BaseRedditScraper[aiohttp.ClientSession]):
 
     # -------------------------------------------------------------------------------------------- #
     def _build_comment(self, raw: Dict[str, Any]) -> Optional[Tuple[str, Dict]]:
-        """Map an archive comment to its ``(link_id, record)`` pair, or None if unusable.
+        """Map an Arctic Shift comment to its ``(link_id, record)`` pair, or None if unusable.
 
         Mirrors the live engines, which skip a comment with no author or no body. The
         archive represents those as removal markers rather than as missing values, so the

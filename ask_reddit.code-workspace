@@ -10,11 +10,12 @@
         ["url", "https://github.com/john-james-ai/ask-reddit/"],
         ["projectname", "Ask Reddit"],
         ["projectdescription", "Reddit Scraper."],
-        ["version", "0.1.0"],
+        ["version", "0.2.1"],
         ["pythonversion","3.13.5"]
     ],
     "python.languageServer": "Pylance",
     "psi-header.config": {
+
 
     },
     "editor.codeActionsOnSave": {

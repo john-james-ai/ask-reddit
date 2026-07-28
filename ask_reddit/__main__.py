@@ -35,11 +35,11 @@ from dotenv import load_dotenv
 
 import aiohttp
 
-from ask_reddit.constants import ARCHIVE_USER_AGENT
+from ask_reddit.constants import ARCTICSHIFT_USER_AGENT
 from ask_reddit.model import GenAIModel
 from ask_reddit.persist import FileManager
 from ask_reddit.print import Printer
-from ask_reddit.scrape_archive import ArchiveRedditScraper
+from ask_reddit.scrape_arcticshift import ArcticShiftScraper
 from ask_reddit.scrape_async import ARedditScraper
 from ask_reddit.scrape_sync import RedditScraper
 
@@ -296,7 +296,7 @@ async def run_async(
         # Async PRAW requires an explicit close to release the aiohttp session.
         await reddit.close()
 
-async def run_archive(
+async def run_arcticshift(
     subreddit: str,
     months: int,
     file_manager: FileManager,
@@ -307,7 +307,7 @@ async def run_archive(
     concurrency: Optional[int] = None,
     window_hours: Optional[int] = None,
 ) -> None:
-    """Run the archive scraping engine against Arctic Shift.
+    """Run Arctic Shift scraping engine against Arctic Shift.
 
     Unlike the live engines this needs no Reddit credentials, since it never touches
     Reddit's API. It is the only engine that can reach submissions older than roughly the
@@ -322,7 +322,7 @@ async def run_archive(
         force (bool): When True, scrape the full requested window rather than
             resuming from what is already on file.
         verbose (bool): When True, print progress and the summary to the console.
-        concurrency (Optional[int]): Maximum concurrent archive requests. When None, the
+        concurrency (Optional[int]): Maximum concurrent Arctic Shift requests. When None, the
             scraper's own default applies.
         window_hours (Optional[int]): Size of the time slices a span is cut into. When
             None, the scraper's own default applies.
@@ -334,11 +334,11 @@ async def run_archive(
         for key, value in (("concurrency", concurrency), ("window_hours", window_hours))
         if value is not None
     }
-    # The archive answers the default aiohttp agent with a 403, so the header is required
+    # Arctic Shift answers the default aiohttp agent with a 403, so the header is required
     # rather than merely polite.
-    headers = {"User-Agent": ARCHIVE_USER_AGENT}
+    headers = {"User-Agent": ARCTICSHIFT_USER_AGENT}
     async with aiohttp.ClientSession(headers=headers) as session:
-        scraper = ArchiveRedditScraper(
+        scraper = ArcticShiftScraper(
             scraper=session,
             model=model,
             printer=printer,
@@ -354,7 +354,7 @@ async def run_archive(
         # subreddits will walk straight past the failure.
         if scraper.failed:
             logging.critical(
-                f"Archive scrape of r/{subreddit} captured nothing; every span failed."
+                f"Arctic Shift scrape of r/{subreddit} captured nothing; every span failed."
             )
             raise typer.Exit(code=1)
 
@@ -373,19 +373,19 @@ def main(
         "-m",
         help="The number of past months for which data shall be extracted.",
     ),
-    archive: bool = typer.Option(
+    arcticshift: bool = typer.Option(
         True,
-        "--archive/--live",
-        help="Read from the Arctic Shift archive (default) or from Reddit's API. The live "
+        "--arcticshift/--live",
+        help="Read from the Arctic Shift (default) or from Reddit's API. The live "
         "API caps every listing at ~1000 submissions regardless of --month, so --live "
-        "reaches only about a week of a busy subreddit. The archive has no such cap and "
+        "reaches only about a week of a busy subreddit. Arctic Shift has no such cap and "
         "needs no Reddit credentials.",
     ),
     async_mode: bool = typer.Option(
         True,
         "--async/--sync",
         help="With --live, choose the asynchronous scraper (default) or the synchronous "
-        "fallback. Ignored by the archive engine, which is always asynchronous.",
+        "fallback. Ignored by the Arctic Shift engine, which is always asynchronous.",
     ),
     directory: Optional[str] = typer.Option(
         None,
@@ -398,7 +398,7 @@ def main(
         "--concurrency",
         "-c",
         min=1,
-        help="Maximum requests in flight. Applies to the archive and --live --async "
+        help="Maximum requests in flight. Applies to Arctic Shift and --live --async "
         "engines; the --sync engine is serial and ignores it. Defaults to the engine's "
         "own setting.",
     ),
@@ -407,7 +407,7 @@ def main(
         "--window-hours",
         "-w",
         min=1,
-        help="Archive engine only: size of the time slices each month is cut into. "
+        help="Arctic Shift engine only: size of the time slices each month is cut into. "
         "Pagination is serial within a slice, so this bounds how much of --concurrency "
         "can be used. Affects speed only, not results.",
     ),
@@ -434,11 +434,11 @@ def main(
     Args:
         subreddit (str): Subreddit name to scrape (required).
         months (int): Number of past months to retrieve (default: 1).
-        archive (bool): Read from the Arctic Shift archive rather than Reddit's API.
+        arcticshift (bool): Read from the Arctic Shift rather than Reddit's API.
             The default, and the only engine that can reach past Reddit's ~1000-item
             listing cap. Takes precedence over ``async_mode``.
-        async_mode (bool): With ``archive`` disabled, use the async scraper when True and
-            the synchronous fallback otherwise. Ignored when ``archive`` is set.
+        async_mode (bool): With ``arcticshift`` disabled, use the async scraper when True
+            and the synchronous fallback otherwise. Ignored when ``arcticshift`` is set.
         directory (Optional[str]): Output directory for scraped files. When
             omitted, the ``FILE_LOCATION`` environment variable or ``'data'``
             is used.
@@ -447,7 +447,7 @@ def main(
         verbose (bool): When True, print progress and the summary to the console.
         concurrency (Optional[int]): Maximum requests in flight, for the engines that
             make more than one at a time. None leaves the engine's own default.
-        window_hours (Optional[int]): Archive engine only; size of the time slices a
+        window_hours (Optional[int]): Arctic Shift engine only; size of the time slices a
             month is cut into. None leaves the engine's own default.
     """
 
@@ -458,7 +458,7 @@ def main(
     # Acknowledge command line invocation and parameters
     logging.info(
         f"CLI started for r/{subreddit}, months={months}, "
-        f"engine={'archive' if archive else ('async' if async_mode else 'sync')}"
+        f"engine={'arcticshift' if arcticshift else ('async' if async_mode else 'sync')}"
     )
 
     # Instantiate the file manager responsible for persisting submissions to json
@@ -473,9 +473,9 @@ def main(
     # Instantiate the printer object
     printer = Printer(verbose=verbose)
 
-    if archive:
+    if arcticshift:
         asyncio.run(
-            run_archive(
+            run_arcticshift(
                 subreddit=subreddit,
                 months=months,
                 file_manager=file_manager,
@@ -489,7 +489,7 @@ def main(
         )
     elif async_mode:
         if window_hours is not None:
-            logging.warning("--window-hours applies to the archive engine only; ignoring.")
+            logging.warning("--window-hours applies to the Arctic Shift engine only; ignoring.")
         asyncio.run(
             run_async(
                 subreddit=subreddit,
