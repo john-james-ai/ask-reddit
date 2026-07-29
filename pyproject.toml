@@ -29,7 +29,7 @@ classifiers = [  #! Update me
 
 [tool.poetry.scripts]
 # Entry points for the package https://python-poetry.org/docs/pyproject/#scripts
-"ask-reddit" = "ask_reddit.__main__:app"
+"ask-reddit" = "ask.__main__:app"
 
 [tool.poetry.dependencies]
 python = "^3.13"
@@ -102,7 +102,7 @@ warn_unused_ignores = true
 norecursedirs =["hooks", "*.egg", ".eggs", "dist", "build", "docs", ".tox", ".git", "__pycache__"]
 doctest_optionflags = ["NUMBER", "NORMALIZE_WHITESPACE", "IGNORE_EXCEPTION_DETAIL"]
 addopts = """\
-    --cov ask_reddit \
+    --cov ask \
     --cov tests \
     --cov-report term-missing \
     --no-cov-on-fail \

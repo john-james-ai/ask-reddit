@@ -4,15 +4,15 @@
 # Project    : Ask Reddit                                                                          #
 # Version    : 0.1.0                                                                               #
 # Python     : 3.13.5                                                                              #
-# Filename   : scrape-async.py                                                                     #
-# Filename   : scrape-async.py                                                                     #
+# Filename   : scrape_async.py                                                                     #
+# Filename   : scrape_async.py                                                                     #
 # ------------------------------------------------------------------------------------------------ #
 # Author     : John James                                                                          #
 # URL        : https://github.com/john-james-ai/ask-reddit/                                        #
 # URL        : https://github.com/john-james-ai/ask-reddit/                                        #
 # ------------------------------------------------------------------------------------------------ #
-# Modified   : Saturday July 25th 2026 11:57:32 am                                                 #
-# Modified   : Saturday July 25th 2026 11:57:32 am                                                 #
+# Modified   : Wednesday July 29th 2026 12:15:57 am                                                #
+# Modified   : Wednesday July 29th 2026 12:15:57 am                                                #
 # ------------------------------------------------------------------------------------------------ #
 # License    : MIT License                                                                         #
 # Copyright  : (c) 2026 John James                                                                 #
@@ -59,17 +59,17 @@ from asyncpraw.models import Comment, Submission
 from asyncprawcore.exceptions import Forbidden, NotFound, Redirect, TooManyRequests
 from tqdm.auto import tqdm
 
-from ask_reddit.constants import (
+from ask.constants import (
     DEFAULT_CONCURRENCY,
     DEFAULT_ERROR_TOLERANCE,
     DEFAULT_MAX_RETRIES,
     DEFAULT_RETRY_BACKOFF,
     MONTH_SPAN_FORMAT,
 )
-from ask_reddit.model import GenAIModel
-from ask_reddit.persist import FileManager
-from ask_reddit.print import Printer
-from ask_reddit.scrape import BaseRedditScraper
+from ask.model import GenAIModel
+from ask.persist import FileManager
+from ask.print import Printer
+from ask.scrape import BaseRedditScraper
 
 # ------------------------------------------------------------------------------------------------ #
 logger = logging.getLogger(__name__)

@@ -4,14 +4,14 @@
 # Project    : Ask Reddit                                                                          #
 # Version    : 0.1.0                                                                               #
 # Python     : 3.13.5                                                                              #
-# Filename   : /tests/scrape/test_scrape_async.py                                                  #
+# Filename   : test_scrape_async.py                                                                #
 # ------------------------------------------------------------------------------------------------ #
 # Author     : John James                                                                          #
 # Email      : john@variancexplained.ai                                                            #
 # URL        : https://github.com/john-james-ai/ask-reddit/                                        #
 # ------------------------------------------------------------------------------------------------ #
 # Created    : Saturday July 25th 2026 01:30:00 pm                                                 #
-# Modified   : Saturday July 25th 2026 01:30:00 pm                                                 #
+# Modified   : Wednesday July 29th 2026 12:15:57 am                                                #
 # ------------------------------------------------------------------------------------------------ #
 # License    : MIT License                                                                         #
 # Copyright  : (c) 2026 John James                                                                 #
@@ -29,21 +29,20 @@ session, so every helper closes it in a ``finally`` block.
 
 Run with:  pytest tests/scrape/test_scrape_async.py -m integration
 """
-from typing import Any, Callable, Dict, List
-
 import asyncio
 import inspect
 import logging
 from datetime import datetime
 from pathlib import Path
+from typing import Any, Callable, Dict, List
 
 import pytest
 
-from ask_reddit.__main__ import create_async_reddit, create_file_manager
-from ask_reddit.date import DateTime
-from ask_reddit.model import GenAIModel
-from ask_reddit.print import Printer
-from ask_reddit.scrape_async import ARedditScraper
+from ask.__main__ import create_async_reddit, create_file_manager
+from ask.date import DateTime
+from ask.model import GenAIModel
+from ask.print import Printer
+from ask.scrape_async import ARedditScraper
 
 # ------------------------------------------------------------------------------------------------ #
 # pylint: disable=missing-class-docstring, line-too-long, redefined-outer-name

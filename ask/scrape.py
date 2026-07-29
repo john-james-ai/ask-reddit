@@ -12,7 +12,7 @@
 # URL        : https://github.com/john-james-ai/ask-reddit/                                        #
 # ------------------------------------------------------------------------------------------------ #
 # Created    : Saturday July 25th 2026 09:04:04 am                                                 #
-# Modified   : Saturday July 25th 2026 03:53:01 pm                                                 #
+# Modified   : Wednesday July 29th 2026 12:15:57 am                                                #
 # ------------------------------------------------------------------------------------------------ #
 # License    : MIT License                                                                         #
 # Copyright  : (c) 2026 John James                                                                 #
@@ -28,11 +28,11 @@ import aiohttp
 import asyncpraw
 import praw
 
-from ask_reddit.constants import DEFAULT_ERROR_TOLERANCE
-from ask_reddit.date import DateTime
-from ask_reddit.model import GenAIModel
-from ask_reddit.persist import FileManager
-from ask_reddit.print import Printer
+from ask.constants import DEFAULT_ERROR_TOLERANCE
+from ask.date import DateTime
+from ask.model import GenAIModel
+from ask.persist import FileManager
+from ask.print import Printer
 
 # ------------------------------------------------------------------------------------------------ #
 logger = logging.getLogger(__name__)
@@ -108,6 +108,32 @@ class BaseRedditScraper(ABC, Generic[TReddit]):
         self._needed_spans = self._compute_needed_spans()
 
 
+
+    # -------------------------------------------------------------------------------------------- #
+    # Read-only views of the run's counters. A caller that runs several scrapes in one
+    # process needs these to build a per-subreddit record, and reading the underscored
+    # attributes from outside would make every one of them part of the interface by
+    # accident. Exposed here rather than on each engine, since all of them count the same
+    # four things through the same base-class code paths.
+    @property
+    def n_batches(self) -> int:
+        """Batches written so far. One per span persisted."""
+        return self._n_batches
+
+    @property
+    def n_submissions(self) -> int:
+        """Submissions collected so far."""
+        return self._n_submissions
+
+    @property
+    def n_comments(self) -> int:
+        """Comments collected so far."""
+        return self._n_comments
+
+    @property
+    def n_tokens(self) -> int:
+        """Tokens counted across the batches written so far."""
+        return self._n_tokens
 
     # -------------------------------------------------------------------------------------------- #
     @property

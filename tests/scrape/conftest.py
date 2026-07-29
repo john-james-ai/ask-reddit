@@ -4,14 +4,14 @@
 # Project    : Ask Reddit                                                                          #
 # Version    : 0.1.0                                                                               #
 # Python     : 3.13.5                                                                              #
-# Filename   : /tests/scrape/conftest.py                                                           #
+# Filename   : conftest.py                                                                         #
 # ------------------------------------------------------------------------------------------------ #
 # Author     : John James                                                                          #
 # Email      : john@variancexplained.ai                                                            #
 # URL        : https://github.com/john-james-ai/ask-reddit/                                        #
 # ------------------------------------------------------------------------------------------------ #
 # Created    : Saturday July 25th 2026 01:30:00 pm                                                 #
-# Modified   : Saturday July 25th 2026 01:30:00 pm                                                 #
+# Modified   : Wednesday July 29th 2026 12:15:57 am                                                #
 # ------------------------------------------------------------------------------------------------ #
 # License    : MIT License                                                                         #
 # Copyright  : (c) 2026 John James                                                                 #
@@ -45,20 +45,19 @@ Token counting
     scrape still completes. The assertions therefore treat a zero token count as
     acceptable and never require the Gemini key to be present.
 """
-from typing import Any, Callable, Dict, List, Optional, Tuple
-
 import asyncio
 import json
 import re
 import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import pytest
 from aiohttp import web
 
-from ask_reddit.date import DateTime
-from ask_reddit.persist import FileManager
+from ask.date import DateTime
+from ask.persist import FileManager
 
 # ------------------------------------------------------------------------------------------------ #
 # pylint: disable=missing-class-docstring, redefined-outer-name

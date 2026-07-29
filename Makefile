@@ -40,14 +40,14 @@ formatting: codestyle
 #* Linting
 .PHONY: test
 test:
-	PYTHONPATH=$(PYTHONPATH) poetry run pytest -c pyproject.toml --cov-report=html --cov=ask_reddit tests/
+	PYTHONPATH=$(PYTHONPATH) poetry run pytest -c pyproject.toml --cov-report=html --cov=ask tests/
 	poetry run coverage-badge -o assets/images/coverage.svg -f
 
 .PHONY: check-codestyle
 check-codestyle:
 	poetry run isort --diff --check-only --settings-path pyproject.toml ./
 	poetry run black --diff --check --config pyproject.toml ./
-	poetry run darglint --verbosity 2 ask_reddit tests
+	poetry run darglint --verbosity 2 ask tests
 
 .PHONY: mypy
 mypy:
@@ -57,7 +57,7 @@ mypy:
 check-safety:
 	poetry check
 	poetry run safety check --full-report
-	poetry run bandit -ll --recursive ask_reddit tests
+	poetry run bandit -ll --recursive ask tests
 
 .PHONY: lint
 lint: test check-codestyle mypy check-safety

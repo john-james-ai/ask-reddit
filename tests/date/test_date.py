@@ -4,19 +4,19 @@
 # Project    : Ask Reddit                                                                          #
 # Version    : 0.1.0                                                                               #
 # Python     : 3.13.5                                                                              #
-# Filename   : /tests/date/test_date.py                                                            #
+# Filename   : test_date.py                                                                        #
 # ------------------------------------------------------------------------------------------------ #
 # Author     : John James                                                                          #
 # Email      : john.james.ai.studio@gmail.com                                                      #
 # URL        : https://github.com/john-james-ai/ask-reddit/                                        #
 # ------------------------------------------------------------------------------------------------ #
 # Created    : Saturday July 25th 2026 12:00:00 pm                                                 #
-# Modified   : Saturday July 25th 2026 12:00:00 pm                                                 #
+# Modified   : Wednesday July 29th 2026 12:15:57 am                                                #
 # ------------------------------------------------------------------------------------------------ #
 # License    : MIT License                                                                         #
 # Copyright  : (c) 2025 John James                                                                 #
 # ================================================================================================ #
-"""Tests for ask_reddit.date.DateTime.
+"""Tests for ask.date.DateTime.
 
 Covers all five static methods of the utility:
 
@@ -35,15 +35,14 @@ The system clock is not frozen or patched. Expected months are derived from the 
 ``expected_month`` oracle in conftest, and ``month_boundary_guard`` skips any assertion that
 straddles a UTC month rollover.
 """
-from typing import Callable, Dict, List, Tuple
-
 import inspect
 import logging
 from datetime import datetime, timedelta, timezone
+from typing import Callable, Dict, List, Tuple
 
 import pytest
 
-from ask_reddit.date import DateTime
+from ask.date import DateTime
 
 # ------------------------------------------------------------------------------------------------ #
 # pylint: disable=missing-class-docstring, line-too-long, redefined-outer-name

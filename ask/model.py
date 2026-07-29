@@ -4,29 +4,28 @@
 # Project    : Ask Reddit                                                                          #
 # Version    : 0.1.0                                                                               #
 # Python     : 3.13.5                                                                              #
-# Filename   : /ask_reddit/model.py                                                                #
+# Filename   : model.py                                                                            #
 # ------------------------------------------------------------------------------------------------ #
 # Author     : John James                                                                          #
 # Email      : john.james.ai.studio@gmail.com                                                      #
 # URL        : https://github.com/john-james-ai/ask-reddit/                                        #
 # ------------------------------------------------------------------------------------------------ #
 # Created    : Friday August 22nd 2025 02:40:33 pm                                                 #
-# Modified   : Wednesday October 1st 2025 11:17:13 pm                                              #
+# Modified   : Wednesday July 29th 2026 12:15:57 am                                                #
 # ------------------------------------------------------------------------------------------------ #
 # License    : MIT License                                                                         #
 # Copyright  : (c) 2025 John James                                                                 #
 # ================================================================================================ #
 """Encapsulates the Generative AI Model"""
-from typing import Iterator, List, Tuple
-
 import json
 import logging
 import os
+from typing import Iterator, List, Tuple
 
 from dotenv import load_dotenv
 from google import genai
 
-from ask_reddit.constants import DEFAULT_GENAI_MODEL, DEFAULT_TOKEN_COUNT_CHUNK_BYTES
+from ask.constants import DEFAULT_GENAI_MODEL, DEFAULT_TOKEN_COUNT_CHUNK_BYTES
 
 # ------------------------------------------------------------------------------------------------ #
 load_dotenv()

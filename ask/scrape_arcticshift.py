@@ -1,4 +1,23 @@
 #!/usr/bin/env python3
+# ================================================================================================ #
+# Project    : Ask Reddit                                                                          #
+# Project    : Ask Reddit                                                                          #
+# Version    : 0.3.0                                                                               #
+# Python     : 3.13.5                                                                              #
+# Filename   : scrape_arcticshift.py                                                               #
+# Filename   : scrape_arcticshift.py                                                               #
+# ------------------------------------------------------------------------------------------------ #
+# Author     : John James                                                                          #
+# URL        : https://github.com/john-james-ai/ask-reddit/                                        #
+# URL        : https://github.com/john-james-ai/ask-reddit/                                        #
+# ------------------------------------------------------------------------------------------------ #
+# Modified   : Wednesday July 29th 2026 12:15:57 am                                                #
+# Modified   : Wednesday July 29th 2026 12:15:57 am                                                #
+# ------------------------------------------------------------------------------------------------ #
+# License    : MIT License                                                                         #
+# Copyright  : (c) 2026 John James                                                                 #
+# ================================================================================================ #
+#!/usr/bin/env python3
 # -*- coding:utf-8 -*-
 # ================================================================================================ #
 # Project    : Ask Reddit                                                                          #
@@ -44,8 +63,8 @@ import asyncio
 import logging
 import random
 import sys
-from contextlib import asynccontextmanager
 from collections import Counter
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from typing import (
     Any,
@@ -62,12 +81,12 @@ from typing import (
 import aiohttp
 from tqdm.auto import tqdm
 
-from ask_reddit.constants import (
-    ARCTICSHIFT_HOLD_ROUNDS,
-    ARCTICSHIFT_MAX_HOLD_ROUNDS,
+from ask.constants import (
     ARCTICSHIFT_BASE_URL,
+    ARCTICSHIFT_HOLD_ROUNDS,
     ARCTICSHIFT_INITIAL_CONCURRENCY,
     ARCTICSHIFT_MAX_BACKOFF,
+    ARCTICSHIFT_MAX_HOLD_ROUNDS,
     ARCTICSHIFT_MAX_RESET_WAIT,
     ARCTICSHIFT_PAGE_LIMIT,
     ARCTICSHIFT_RESET_HEADER,
@@ -80,11 +99,11 @@ from ask_reddit.constants import (
     DEFAULT_COMMENT_GRACE_DAYS,
     DEFAULT_RETRY_BACKOFF,
 )
-from ask_reddit.date import DateTime
-from ask_reddit.model import GenAIModel
-from ask_reddit.persist import FileManager
-from ask_reddit.print import Printer
-from ask_reddit.scrape import BaseRedditScraper
+from ask.date import DateTime
+from ask.model import GenAIModel
+from ask.persist import FileManager
+from ask.print import Printer
+from ask.scrape import BaseRedditScraper
 
 # ------------------------------------------------------------------------------------------------ #
 logger = logging.getLogger(__name__)
@@ -409,6 +428,16 @@ class ArcticShiftScraper(BaseRedditScraper[aiohttp.ClientSession]):
     def failed(self) -> bool:
         """True when spans were attempted and none were written."""
         return self._n_spans_failed > 0 and self._n_batches == 0
+
+    @property
+    def n_spans_failed(self) -> int:
+        """Spans that were attempted and produced no batch."""
+        return self._n_spans_failed
+
+    @property
+    def n_orphan_comments(self) -> int:
+        """Comments whose submission fell outside the span being assembled."""
+        return self._n_orphan_comments
 
     @property
     def description(self) -> Dict:

@@ -12,7 +12,7 @@
 # URL        : https://github.com/john-james-ai/ask-reddit/                                        #
 # ------------------------------------------------------------------------------------------------ #
 # Created    : Friday July 24th 2026 07:29:32 am                                                   #
-# Modified   : Saturday July 25th 2026 12:11:17 pm                                                 #
+# Modified   : Wednesday July 29th 2026 12:15:57 am                                                #
 # ------------------------------------------------------------------------------------------------ #
 # License    : MIT License                                                                         #
 # Copyright  : (c) 2026 John James                                                                 #
@@ -28,21 +28,20 @@ import os
 import sys
 from typing import Optional
 
+import aiohttp
 import asyncpraw
 import praw
 import typer
 from dotenv import load_dotenv
 from tqdm.auto import tqdm
 
-import aiohttp
-
-from ask_reddit.constants import ARCTICSHIFT_USER_AGENT
-from ask_reddit.model import GenAIModel
-from ask_reddit.persist import FileManager
-from ask_reddit.print import Printer
-from ask_reddit.scrape_arcticshift import ArcticShiftScraper
-from ask_reddit.scrape_async import ARedditScraper
-from ask_reddit.scrape_sync import RedditScraper
+from ask.constants import ARCTICSHIFT_USER_AGENT
+from ask.model import GenAIModel
+from ask.persist import FileManager
+from ask.print import Printer
+from ask.scrape_arcticshift import ArcticShiftScraper
+from ask.scrape_async import ARedditScraper
+from ask.scrape_sync import RedditScraper
 
 # ------------------------------------------------------------------------------------------------ #
 load_dotenv()

@@ -4,14 +4,14 @@
 # Project    : Ask Reddit                                                                          #
 # Version    : 0.1.0                                                                               #
 # Python     : 3.13.5                                                                              #
-# Filename   : /tests/scrape/test_scrape_arcticshift.py                                            #
+# Filename   : test_scrape_arcticshift.py                                                          #
 # ------------------------------------------------------------------------------------------------ #
 # Author     : John James                                                                          #
 # Email      : john@variancexplained.ai                                                            #
 # URL        : https://github.com/john-james-ai/ask-reddit/                                        #
 # ------------------------------------------------------------------------------------------------ #
 # Created    : Tuesday July 28th 2026 08:45:00 pm                                                  #
-# Modified   : Tuesday July 28th 2026 08:45:00 pm                                                  #
+# Modified   : Wednesday July 29th 2026 12:15:57 am                                                #
 # ------------------------------------------------------------------------------------------------ #
 # License    : MIT License                                                                         #
 # Copyright  : (c) 2026 John James                                                                 #
@@ -35,27 +35,26 @@ with ``asyncio.run`` from an ordinary test function, matching ``test_scrape_asyn
 
 Run with:  pytest tests/scrape/test_scrape_arcticshift.py
 """
-from typing import Any, Callable, List
-
 import asyncio
 import inspect
 import logging
 from datetime import datetime
 from pathlib import Path
+from typing import Any, Callable, List
 
 import aiohttp
 import pytest
 
-from ask_reddit.constants import (
+from ask.constants import (
     ARCTICSHIFT_HOLD_ROUNDS,
     ARCTICSHIFT_MAX_HOLD_ROUNDS,
     ARCTICSHIFT_MAX_RESET_WAIT,
     ARCTICSHIFT_RESUME_JITTER,
 )
-from ask_reddit.model import GenAIModel
-from ask_reddit.persist import FileManager
-from ask_reddit.print import Printer
-from ask_reddit.scrape_arcticshift import (
+from ask.model import GenAIModel
+from ask.persist import FileManager
+from ask.print import Printer
+from ask.scrape_arcticshift import (
     ArcticShiftScraper,
     EquilibriumLimiter,
     reset_wait,
@@ -181,7 +180,7 @@ async def request_against(
     """
     async with server as base_url:
         monkeypatch.setattr(
-            "ask_reddit.scrape_arcticshift.ARCTICSHIFT_BASE_URL", base_url
+            "ask.scrape_arcticshift.ARCTICSHIFT_BASE_URL", base_url
         )
         async with aiohttp.ClientSession() as session:
             scraper = build_scraper(
