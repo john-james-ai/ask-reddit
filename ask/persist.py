@@ -2,7 +2,7 @@
 # ================================================================================================ #
 # Project    : Ask Reddit                                                                          #
 # Description: Reddit Scraper.                                                                     #
-# Version    : 0.3.1                                                                               #
+# Version    : 0.3.2                                                                               #
 # Python     : 3.13.5                                                                              #
 # Filename   : persist.py                                                                          #
 # Filename   : persist.py                                                                          #
@@ -12,7 +12,7 @@
 # URL        : https://github.com/john-james-ai/ask-reddit/                                        #
 # ------------------------------------------------------------------------------------------------ #
 # Created    : Wednesday July 22nd 2026 08:28:57 pm                                                #
-# Modified   : Wednesday July 29th 2026 01:26:58 am                                                #
+# Modified   : Wednesday July 29th 2026 02:03:45 am                                                #
 # ------------------------------------------------------------------------------------------------ #
 # License    : MIT License                                                                         #
 # Copyright  : (c) 2026 John James                                                                 #

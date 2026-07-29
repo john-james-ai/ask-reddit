@@ -2,7 +2,7 @@
 # ================================================================================================ #
 # Project    : Ask Reddit                                                                          #
 # Project    : Ask Reddit                                                                          #
-# Version    : 0.3.1                                                                               #
+# Version    : 0.3.2                                                                               #
 # Python     : 3.13.5                                                                              #
 # Filename   : scrape_async.py                                                                     #
 # Filename   : scrape_async.py                                                                     #
@@ -11,8 +11,8 @@
 # URL        : https://github.com/john-james-ai/ask-reddit/                                        #
 # URL        : https://github.com/john-james-ai/ask-reddit/                                        #
 # ------------------------------------------------------------------------------------------------ #
-# Modified   : Wednesday July 29th 2026 01:27:38 am                                                #
-# Modified   : Wednesday July 29th 2026 01:27:38 am                                                #
+# Modified   : Wednesday July 29th 2026 02:03:45 am                                                #
+# Modified   : Wednesday July 29th 2026 02:03:45 am                                                #
 # ------------------------------------------------------------------------------------------------ #
 # License    : MIT License                                                                         #
 # Copyright  : (c) 2026 John James                                                                 #
@@ -21,7 +21,7 @@
 # -*- coding:utf-8 -*-
 # ================================================================================================ #
 # Project    : Ask Reddit                                                                          #
-# Version    : 0.3.1                                                                               #
+# Version    : 0.3.2                                                                               #
 # Python     : 3.13.5                                                                              #
 # Filename   : /ask/scrape_async.py                                                                #
 # ------------------------------------------------------------------------------------------------ #

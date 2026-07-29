@@ -2,7 +2,7 @@
 # ================================================================================================ #
 # Project    : Ask Reddit                                                                          #
 # Project    : Ask Reddit                                                                          #
-# Version    : 0.3.1                                                                               #
+# Version    : 0.3.2                                                                               #
 # Python     : 3.13.5                                                                              #
 # Filename   : scrape_arcticshift.py                                                               #
 # Filename   : scrape_arcticshift.py                                                               #
@@ -11,8 +11,8 @@
 # URL        : https://github.com/john-james-ai/ask-reddit/                                        #
 # URL        : https://github.com/john-james-ai/ask-reddit/                                        #
 # ------------------------------------------------------------------------------------------------ #
-# Modified   : Wednesday July 29th 2026 01:27:38 am                                                #
-# Modified   : Wednesday July 29th 2026 01:27:38 am                                                #
+# Modified   : Wednesday July 29th 2026 02:03:45 am                                                #
+# Modified   : Wednesday July 29th 2026 02:03:45 am                                                #
 # ------------------------------------------------------------------------------------------------ #
 # License    : MIT License                                                                         #
 # Copyright  : (c) 2026 John James                                                                 #
@@ -21,7 +21,7 @@
 # -*- coding:utf-8 -*-
 # ================================================================================================ #
 # Project    : Ask Reddit                                                                          #
-# Version    : 0.3.1                                                                               #
+# Version    : 0.3.2                                                                               #
 # Python     : 3.13.5                                                                              #
 # Filename   : /ask/scrape_arcticshift.py                                                          #
 # ------------------------------------------------------------------------------------------------ #
@@ -493,9 +493,14 @@ class ArcticShiftScraper(BaseRedditScraper[aiohttp.ClientSession]):
             except Exception as e:
                 self._consecutive_failures += 1
                 self._n_spans_failed += 1
+                # exc_info, because the message alone is not always enough to act on: aiohttp
+                # replaces an unclassified parser failure with a bare HttpProcessingError,
+                # whose str is "0, message=''" and says nothing about what went wrong. The
+                # original is preserved as the cause, and only the traceback carries it.
                 self._log.error(
                     f"Failed to fetch span '{span}' (consecutive failures: "
-                    f"{self._consecutive_failures}): {e}"
+                    f"{self._consecutive_failures}): {e}",
+                    exc_info=True,
                 )
                 if self._consecutive_failures > self._tolerance:
                     self._log.critical(
@@ -696,6 +701,11 @@ class ArcticShiftScraper(BaseRedditScraper[aiohttp.ClientSession]):
         its usual sense of a malformed request. Every other 4xx really is malformed and
         would fail identically however often it were repeated, so it is raised at once
         rather than burning the retry budget.
+
+        A response that never parsed is retried too. It arrives as a ClientResponseError
+        with ``status == 0``, which is not a status at all but the default aiohttp leaves
+        when no status line was read, and it is a sibling of ClientConnectionError rather
+        than a subclass, so it needs its own clause to be caught.
         """
         url = f"{ARCTICSHIFT_BASE_URL}/{path}"
         retriable = {ARCTICSHIFT_THROTTLE_STATUS, 429}
@@ -748,6 +758,18 @@ class ArcticShiftScraper(BaseRedditScraper[aiohttp.ClientSession]):
                             f"Arctic Shift returned {response.status} for {path}; {note}; "
                             f"retry {attempt}/{self._max_retries - 1}."
                         )
+            except aiohttp.ClientResponseError as e:
+                # Status 0 is not an HTTP verdict. aiohttp leaves it at the default when the
+                # response never parsed into a status line, so there is no status, no reason
+                # and no served answer to act on: a transport accident wearing a response
+                # object. Retried like the connection errors below, rather than raised at
+                # once like a genuine 4xx, which would fail identically however often it ran.
+                if e.status != 0 or attempt == self._max_retries:
+                    raise
+                self._log.debug(
+                    f"Arctic Shift response to {path} did not parse ({e}); sleeping "
+                    f"{wait:.1f}s before retry {attempt}/{self._max_retries - 1}."
+                )
             except (aiohttp.ClientConnectionError, asyncio.TimeoutError) as e:
                 if attempt == self._max_retries:
                     raise

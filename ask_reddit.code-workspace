@@ -10,7 +10,7 @@
         ["url", "https://github.com/john-james-ai/ask-reddit/"],
         ["projectname", "Ask Reddit"],
         ["projectdescription", "Reddit Scraper."],
-        ["version", "0.3.1"],
+        ["version", "0.3.2"],
         ["pythonversion","3.13.5"]
     ],
     "python.languageServer": "Pylance",

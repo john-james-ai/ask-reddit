@@ -60,7 +60,7 @@ dependencies:
   - pip=25.1.1=pyh145f28c_0
   - praw=7.8.1=pyhd8ed1ab_0
   - prawcore=2.4.0=pyhd8ed1ab_1
-  - propcache=0.3.1=py313h8060acc_0
+  - propcache=0.3.2=py313h8060acc_0
   - pyasn1=0.6.1=pyhd8ed1ab_2
   - pyasn1-modules=0.4.2=pyhd8ed1ab_0
   - pycparser=2.22=pyh29332c3_1

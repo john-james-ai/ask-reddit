@@ -11,6 +11,25 @@
 # Email      : john@variancexplained.ai                                                            #
 # URL        : https://github.com/john-james-ai/ask-reddit/                                        #
 # ------------------------------------------------------------------------------------------------ #
+# Created    : Wednesday July 29th 2026 01:52:37 am                                                #
+# Modified   : Wednesday July 29th 2026 02:03:45 am                                                #
+# ------------------------------------------------------------------------------------------------ #
+# License    : MIT License                                                                         #
+# Copyright  : (c) 2026 John James                                                                 #
+# ================================================================================================ #
+#!/usr/bin/env python3
+# ================================================================================================ #
+# Project    : Ask Reddit                                                                          #
+# Description: Reddit Scraper.                                                                     #
+# Version    : 0.3.2                                                                               #
+# Python     : 3.13.5                                                                              #
+# Filepath   : /ask                                                                                #
+# Filename   : reddit.py                                                                           #
+# ------------------------------------------------------------------------------------------------ #
+# Author     : John James                                                                          #
+# Email      : john@variancexplained.ai                                                            #
+# URL        : https://github.com/john-james-ai/ask-reddit/                                        #
+# ------------------------------------------------------------------------------------------------ #
 # Created    : Wednesday July 29th 2026 01:20:59 am                                                #
 # Modified   : Wednesday July 29th 2026 01:27:56 am                                                #
 # ------------------------------------------------------------------------------------------------ #
@@ -108,8 +127,10 @@ class AskReddit:
         window_hours (int): Size of the slices a month is cut into. Affects speed only,
             not results.
         configure_logging (bool): When True, point logging at the rotating file the CLI
-            uses. Set False when the caller has already configured logging and does not
-            want its handlers replaced.
+            uses. Defaults False, because ``setup_logging`` clears the root logger's
+            handlers, and a notebook that configured its own logging before importing this
+            module would lose it to a side effect of constructing a controller. Set True
+            when nothing else has configured logging and the CLI's rotating file is wanted.
         log_filepath (str): Log file to configure. Defaults to ``LOG_FILEPATH`` from the
             environment, then the CLI's default path.
     """
@@ -123,7 +144,7 @@ class AskReddit:
         verbose: bool = False,
         concurrency: int = DEFAULT_ARCTICSHIFT_CONCURRENCY,
         window_hours: int = ARCTICSHIFT_WINDOW_HOURS,
-        configure_logging: bool = True,
+        configure_logging: bool = False,
         log_filepath: str = LOG_FILEPATH,
     ) -> None:
         self._directory = directory
