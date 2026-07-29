@@ -45,8 +45,19 @@ import logging
 import random
 import sys
 from contextlib import asynccontextmanager
+from collections import Counter
 from datetime import datetime, timedelta
-from typing import Any, AsyncIterator, Callable, Dict, List, MutableMapping, Optional, Tuple
+from typing import (
+    Any,
+    AsyncIterator,
+    Callable,
+    Dict,
+    List,
+    Mapping,
+    MutableMapping,
+    Optional,
+    Tuple,
+)
 
 import aiohttp
 from tqdm import tqdm
@@ -57,7 +68,10 @@ from ask_reddit.constants import (
     ARCTICSHIFT_BASE_URL,
     ARCTICSHIFT_INITIAL_CONCURRENCY,
     ARCTICSHIFT_MAX_BACKOFF,
+    ARCTICSHIFT_MAX_RESET_WAIT,
     ARCTICSHIFT_PAGE_LIMIT,
+    ARCTICSHIFT_RESET_HEADER,
+    ARCTICSHIFT_RESUME_JITTER,
     ARCTICSHIFT_THROTTLE_STATUS,
     ARCTICSHIFT_WINDOW_HOURS,
     DEFAULT_ARCTICSHIFT_CONCURRENCY,
@@ -100,6 +114,13 @@ class EquilibriumLimiter:
     one level and work at it. Approaching from below is what makes the gentle step correct,
     since the limiter is never wildly over and never needs a violent correction.
 
+    Only the 422 "slow down" narrows the limit. A 429 says the rolling request budget is
+    spent, which is a fact about a clock rather than about how many connections the service
+    wants open: inside a depleted window every request fails however few are in flight, so
+    reading those as luffs walks the limit to the floor for something width cannot fix.
+    Those are answered by ``pause`` instead, which stops the whole fleet until the window
+    refills and leaves the settled width alone.
+
     Args:
         ceiling (int): Never exceed this many in flight. The user's ``--concurrency``.
         initial (int): Where the limiter opens, below any plausible equilibrium.
@@ -124,8 +145,13 @@ class EquilibriumLimiter:
         # steps down once per failure, walking the limit to the floor for a single event.
         self._epoch = 0
         self._cond = asyncio.Condition()
+        # Loop time before which no new request may be issued, set when the service reports
+        # its request window is spent. Zero whenever the window is believed to be open.
+        self._resume_at = 0.0
         # Reported per span, so a run can say where it settled and how hard it looked.
         self.luffs = 0
+        self.pauses = 0
+        self.paused_seconds = 0.0
         self.low_water = self._limit
         self.high_water = self._limit
 
@@ -134,6 +160,19 @@ class EquilibriumLimiter:
         """The current in-flight ceiling."""
         return self._limit
 
+    def reset_marks(self) -> None:
+        """Zero the per-span counters, leaving the settled limit alone.
+
+        The limit itself carries across spans deliberately: what the service sustained a
+        minute ago is the best starting guess for the next span. Only the reporting resets,
+        so a span's line describes that span rather than the whole run.
+        """
+        self.luffs = 0
+        self.pauses = 0
+        self.paused_seconds = 0.0
+        self.low_water = self._limit
+        self.high_water = self._limit
+
     @property
     def holding(self) -> bool:
         """True while the limiter is cleated and not probing upward."""
@@ -141,7 +180,16 @@ class EquilibriumLimiter:
 
     @asynccontextmanager
     async def slot(self) -> AsyncIterator[int]:
-        """Hold one in-flight slot, yielding the epoch the request is issued under."""
+        """Hold one in-flight slot, yielding the epoch the request is issued under.
+
+        Waits out any pause before taking a slot rather than after, so a paused fleet holds
+        no slots at all and the width is free for whoever is first through the gate.
+        """
+        loop = asyncio.get_running_loop()
+        while (delay := self._resume_at - loop.time()) > 0:
+            # Jittered past the deadline, because the pause is one instant shared by the
+            # whole fleet: without it they wake together and re-trip the window as one.
+            await asyncio.sleep(delay + random.uniform(0, ARCTICSHIFT_RESUME_JITTER))
         async with self._cond:
             while self._in_flight >= self._limit:
                 await self._cond.wait()
@@ -170,6 +218,32 @@ class EquilibriumLimiter:
                 self.high_water = max(self.high_water, self._limit)
                 self._cond.notify()
 
+    def pause(self, seconds: float) -> float:
+        """Hold every new request for ``seconds``, without touching the settled width.
+
+        Concurrent 429s all report the same window, so the deadlines they ask for are the
+        same deadline seen from slightly different moments. Extending rather than replacing
+        keeps the last, longest one instead of letting a straggler's shorter view of it cut
+        the wait short.
+
+        Args:
+            seconds (float): How long the service says its window needs to refill.
+
+        Returns:
+            float: Seconds actually added to the pause; zero if one already ran longer.
+        """
+        if seconds <= 0:
+            return 0.0
+        now = asyncio.get_running_loop().time()
+        deadline = now + seconds
+        if deadline <= self._resume_at:
+            return 0.0
+        added = deadline - max(self._resume_at, now)
+        self._resume_at = deadline
+        self.pauses += 1
+        self.paused_seconds += added
+        return added
+
     async def on_throttle(self, epoch: int) -> None:
         """Record a luff: come in one notch and cleat, at most once per epoch."""
         async with self._cond:
@@ -188,6 +262,38 @@ class EquilibriumLimiter:
             self.low_water = min(self.low_water, self._limit)
             self._successes = 0
             self._epoch += 1
+
+
+def reset_wait(headers: Mapping[str, str], fallback: float) -> float:
+    """Read how long until Arctic Shift's request window refills.
+
+    ``x-ratelimit-reset`` is seconds until the rolling window is whole again, and it is the
+    only exact statement the service makes about its own limit, so it beats any backoff
+    guessed from the outside. ``Retry-After`` is honoured behind it for the ordinary case
+    where a proxy in front answers instead.
+
+    Args:
+        headers (Mapping[str, str]): Response headers from the throttled request.
+        fallback (float): Wait to use when no header is present or one cannot be believed.
+
+    Returns:
+        float: Seconds to wait before issuing anything further.
+    """
+    raw = headers.get(ARCTICSHIFT_RESET_HEADER) or headers.get("Retry-After")
+    if raw is None:
+        return fallback
+    try:
+        seconds = float(raw)
+    except ValueError:
+        # Retry-After also comes as an HTTP date, and the absolute companion header
+        # ``x-ratelimit-reset-at`` is epoch milliseconds. Neither is a duration.
+        return fallback
+    # Observed resets are single-digit seconds. A wildly larger one is a different unit or
+    # a different meaning being read as a duration, and parking the run on it would cost
+    # more than the backoff it replaced.
+    if seconds <= 0 or seconds > ARCTICSHIFT_MAX_RESET_WAIT:
+        return fallback
+    return seconds
 
 
 class _SubredditLog(logging.LoggerAdapter):
@@ -296,7 +402,7 @@ class ArcticShiftScraper(BaseRedditScraper[aiohttp.ClientSession]):
         # Throttled requests are counted and reported once per span. Logging each retry
         # produced ~14k lines from a handful of small test runs, which buries every other
         # line in the file; the count is the part worth keeping.
-        self._n_throttled = 0
+        self._throttles: Counter = Counter()
         self._log = _SubredditLog(logger, {"subreddit": subreddit})
 
     @property
@@ -335,7 +441,8 @@ class ArcticShiftScraper(BaseRedditScraper[aiohttp.ClientSession]):
                 self._log.info(f"Skipping span '{span}': already complete on file.")
                 continue
 
-            throttled_before = self._n_throttled
+            throttles_before = Counter(self._throttles)
+            self._limiter.reset_marks()
 
             span_start = DateTime.get_month_dt(n)
             # get_month_dt(0) resolves to the first of next month, so this is correct for
@@ -360,13 +467,18 @@ class ArcticShiftScraper(BaseRedditScraper[aiohttp.ClientSession]):
             finally:
                 # One line for the span instead of one per retry. Reported even when the
                 # span failed, since throttling is usually why it did.
-                throttled = self._n_throttled - throttled_before
+                throttled = self._throttles - throttles_before
                 if throttled:
+                    breakdown = ", ".join(
+                        f"{count}x{status}" for status, count in sorted(throttled.items())
+                    )
                     self._log.warning(
-                        f"Span '{span}': {throttled} request(s) throttled and retried; "
+                        f"Span '{span}': {sum(throttled.values())} throttled ({breakdown}); "
                         f"settled at concurrency {self._limiter.limit} after "
-                        f"{self._limiter.luffs} luff(s) (low {self._limiter.low_water}, "
-                        f"high {self._limiter.high_water})."
+                        f"{self._limiter.luffs} luff(s) this span "
+                        f"(low {self._limiter.low_water}, high {self._limiter.high_water}); "
+                        f"waited out {self._limiter.pauses} spent window(s) "
+                        f"({self._limiter.paused_seconds:.1f}s)."
                     )
 
             self._consecutive_failures = 0
@@ -562,19 +674,35 @@ class ArcticShiftScraper(BaseRedditScraper[aiohttp.ClientSession]):
                             # only responses the service actually served count as headroom.
                             await self._limiter.on_success()
                             return payload.get("data", [])
-                        # Reported before the retry decision, so the limiter narrows even
-                        # on the attempt that goes on to raise.
-                        await self._limiter.on_throttle(epoch)
+                        # Both recorded before the retry decision, so the limiter narrows
+                        # and the status is counted even on the attempt that goes on to
+                        # raise. 422 and 429 mean different things here -- a soft "slow
+                        # down" against a hard rate limit -- and collapsing them into one
+                        # total throws away the only diagnostic the aggregate carries.
+                        self._throttles[response.status] += 1
+                        if response.status == ARCTICSHIFT_THROTTLE_STATUS:
+                            # Too many open at once, which is exactly what width controls.
+                            await self._limiter.on_throttle(epoch)
+                            note = f"limit now {self._limiter.limit}"
+                        elif response.status >= 500:
+                            # A transient fault on one request, saying nothing about the
+                            # limit or the window. Retried on its own backoff, with neither
+                            # the width nor the rest of the fleet disturbed for it.
+                            note = f"server fault, limit held at {self._limiter.limit}"
+                        else:
+                            # The window is spent. Width cannot buy anything back, so hold
+                            # the whole fleet until the service says it has refilled and
+                            # leave the settled limit where it was found. The gate in
+                            # ``slot`` serves that wait, so this attempt adds none of its
+                            # own on top of it.
+                            self._limiter.pause(reset_wait(response.headers, wait))
+                            wait = 0.0
+                            note = f"paused, limit held at {self._limiter.limit}"
                         if attempt == self._max_retries:
                             response.raise_for_status()
-                        retry_after = response.headers.get("Retry-After")
-                        if retry_after:
-                            wait = float(retry_after)
-                        self._n_throttled += 1
                         self._log.debug(
-                            f"Arctic Shift returned {response.status} for {path}; limit now "
-                            f"{self._limiter.limit}; sleeping {wait:.1f}s before retry "
-                            f"{attempt}/{self._max_retries - 1}."
+                            f"Arctic Shift returned {response.status} for {path}; {note}; "
+                            f"retry {attempt}/{self._max_retries - 1}."
                         )
             except (aiohttp.ClientConnectionError, asyncio.TimeoutError) as e:
                 if attempt == self._max_retries:
@@ -651,7 +779,8 @@ class ArcticShiftScraper(BaseRedditScraper[aiohttp.ClientSession]):
         message = (
             f"{self._n_spans_failed} span(s) failed and were not written; "
             f"{self._n_batches} succeeded. Re-running fills only the spans with no file "
-            f"on disk. Lower --concurrency if this was throttling."
+            f"on disk. Check the span warnings: 422s mean --concurrency is too high, "
+            f"while 429s mean the request window was spent and only waiting helps."
         )
         self._log.error(message)
         # Also on stderr, for the same reason a missing subreddit is: a run that captured

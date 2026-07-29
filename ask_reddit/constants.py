@@ -59,6 +59,18 @@ ARCTICSHIFT_THROTTLE_STATUS = 422
 # Ceiling on the exponential retry backoff. Retries are what carry a run through a burst
 # of throttling, so the ramp has to be allowed to grow well past the first few seconds.
 ARCTICSHIFT_MAX_BACKOFF = 60.0
+# Seconds until the rolling request window refills, sent on every response. This is the
+# only exact number the service gives about its own limit, so a 429 is answered by waiting
+# it out rather than by guessing at a backoff.
+ARCTICSHIFT_RESET_HEADER = "x-ratelimit-reset"
+# Ceiling on how long that header is trusted for. Observed values are single-digit seconds;
+# anything far larger is a malformed or absolute value being read as a duration, and a run
+# should fall back to its own backoff rather than park for the rest of the afternoon.
+ARCTICSHIFT_MAX_RESET_WAIT = 120.0
+# A paused fleet is waiting on one shared deadline, so it would otherwise wake as one and
+# spend the refilled window in a single burst. Releasing across a second of jitter is what
+# lets the window drain evenly instead.
+ARCTICSHIFT_RESUME_JITTER = 1.0
 # Higher than the live engines' budget. Arctic Shift's limit is rolling rather than
 # per-request, so a run that meets a depleted one has to out-wait it; five attempts is
 # about a minute of patience, which is not enough to cross it.

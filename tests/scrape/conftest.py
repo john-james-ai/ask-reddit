@@ -45,14 +45,17 @@ Token counting
     scrape still completes. The assertions therefore treat a zero token count as
     acceptable and never require the Gemini key to be present.
 """
-from typing import Any, Callable, Dict, List
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
+import asyncio
 import json
 import re
 import shutil
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
+from aiohttp import web
 
 from ask_reddit.date import DateTime
 from ask_reddit.persist import FileManager
@@ -234,3 +237,125 @@ def corpus_without(tmp_path: Path, subreddit: str) -> Callable[[Path, List[int]]
         return destination
 
     return _corpus_without
+
+
+# ------------------------------------------------------------------------------------------------ #
+#                                    ARCTIC SHIFT THROTTLING                                       #
+# ------------------------------------------------------------------------------------------------ #
+# The throttled paths cannot be reached against the live archive. Provoking a 429 there means
+# deliberately exhausting a request window that is shared with every other user of a free
+# community service, and a 422 means opening enough connections to make it complain. Neither
+# is a reasonable thing to do to someone else's server on every test run, and neither is
+# reproducible: the window state depends on who else is using it that minute.
+#
+# So the archive is stood up locally instead. `ArchiveServer` is a real aiohttp server on a
+# real socket, answering real HTTP over a real TCP connection with real headers. Nothing in
+# the scraper is mocked, stubbed, or patched: the session, the retry loop, the limiter, and
+# the response parsing are all the production objects doing their production work. The only
+# thing that changes is which host the base URL points at, which is configuration rather than
+# substitution. What the server gives that the live archive cannot is a scripted sequence of
+# statuses, so a test can say "429 twice with a two second reset, then 200" and know that is
+# exactly what the retry loop will meet.
+
+
+@dataclass
+class ScriptedResponse:
+    """One reply the local archive should send.
+
+    Args:
+        status (int): HTTP status to answer with.
+        headers (Dict[str, str]): Extra response headers, such as ``x-ratelimit-reset``.
+        data (List[Dict[str, Any]]): Records to place under the payload's ``data`` key.
+    """
+
+    status: int = 200
+    headers: Dict[str, str] = field(default_factory=dict)
+    data: List[Dict[str, Any]] = field(default_factory=list)
+
+
+class ArchiveServer:
+    """A real HTTP server answering Arctic Shift's routes from a script.
+
+    Replies are consumed in order and the last one repeats once the script runs out, so a
+    test only has to spell out the part of the sequence it cares about. Every request is
+    recorded, which is how a test tells a retry that happened from one that did not.
+
+    Args:
+        script (List[ScriptedResponse]): Replies to send, in order.
+    """
+
+    def __init__(self, script: List[ScriptedResponse]) -> None:
+        assert script, "a script needs at least one response"
+        self._script = script
+        self._runner: Optional[web.AppRunner] = None
+        # (path, monotonic arrival time) per request, so tests can assert both how many
+        # attempts were made and how far apart they were forced to be.
+        self.requests: List[Tuple[str, float]] = []
+
+    async def _handle(self, request: web.Request) -> web.Response:
+        """Answer one request with the next scripted reply."""
+        self.requests.append((request.path, asyncio.get_running_loop().time()))
+        index = min(len(self.requests) - 1, len(self._script) - 1)
+        reply = self._script[index]
+        return web.json_response(
+            {"data": reply.data}, status=reply.status, headers=reply.headers
+        )
+
+    async def __aenter__(self) -> str:
+        """Start the server and return the base URL to point the scraper at."""
+        app = web.Application()
+        app.router.add_route("*", "/{tail:.*}", self._handle)
+        self._runner = web.AppRunner(app)
+        await self._runner.setup()
+        # Port 0 lets the OS choose, so concurrent test runs cannot collide on a port.
+        site = web.TCPSite(self._runner, "127.0.0.1", 0)
+        await site.start()
+        port = self._runner.addresses[0][1]
+        return f"http://127.0.0.1:{port}/api"
+
+    async def __aexit__(self, *exc_info: Any) -> None:
+        """Shut the server down, whether or not the test body succeeded."""
+        if self._runner is not None:
+            await self._runner.cleanup()
+
+
+@pytest.fixture
+def scripted_response() -> type:
+    """Returns the `ScriptedResponse` class for building an archive's replies.
+
+    Handed over as a fixture rather than imported, because `tests/scrape` is not a package
+    and a direct import of this module would not resolve.
+
+    Returns:
+        type: The `ScriptedResponse` dataclass.
+    """
+    return ScriptedResponse
+
+
+@pytest.fixture
+def archive_server() -> Callable[[List[ScriptedResponse]], ArchiveServer]:
+    """Returns a factory for a local archive answering a scripted status sequence.
+
+    Returns:
+        Callable[[List[ScriptedResponse]], ArchiveServer]: Factory taking the script and
+            returning an async context manager that yields the base URL.
+    """
+
+    def _archive_server(script: List[ScriptedResponse]) -> ArchiveServer:
+        return ArchiveServer(script)
+
+    return _archive_server
+
+
+@pytest.fixture
+def throttled_page() -> List[Dict[str, Any]]:
+    """Returns one archive record, enough to prove a payload survived the retries."""
+    return [
+        {
+            "id": "abc123",
+            "created_utc": 1785285052,
+            "title": "test-submission",
+            "author": "test-author",
+            "selftext": "test body",
+        }
+    ]
