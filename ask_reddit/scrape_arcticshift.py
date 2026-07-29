@@ -60,7 +60,7 @@ from typing import (
 )
 
 import aiohttp
-from tqdm import tqdm
+from tqdm.auto import tqdm
 
 from ask_reddit.constants import (
     ARCTICSHIFT_HOLD_ROUNDS,
@@ -431,12 +431,20 @@ class ArcticShiftScraper(BaseRedditScraper[aiohttp.ClientSession]):
             f"Source: Arctic Shift ({ARCTICSHIFT_BASE_URL}) | window {self._window_hours}h "
             f"| concurrency {self._limiter.limit} (adaptive, max {self._concurrency})"
         )
-        pbar = tqdm(total=None, desc="\t\tProcessing...", disable=not self._verbose)
-
         # Newest span first, matching the order the live engines walk their listing, so a
         # run interrupted partway leaves behind the same spans either engine would have.
-        for n in range(1, self._months + 1):
+        # The bar advances one step per span: the span count is known up front, so this is
+        # a real percentage, and the subreddit is named on it because a batch run has one
+        # bar per subreddit and they are otherwise indistinguishable.
+        pbar = tqdm(
+            range(1, self._months + 1),
+            total=self._months,
+            desc=f"r/{self._subreddit}",
+            unit="month",
+        )
+        for n in pbar:
             span = DateTime.get_month_st(n)
+            pbar.set_postfix_str(span, refresh=False)
             if span not in self._needed_spans:
                 self._log.info(f"Skipping span '{span}': already complete on file.")
                 continue
@@ -534,7 +542,12 @@ class ArcticShiftScraper(BaseRedditScraper[aiohttp.ClientSession]):
 
         self._n_submissions += len(batch)
         if pbar is not None:
-            pbar.update(len(batch))
+            # The bar counts spans, so the running totals ride in the postfix rather than
+            # in the counter.
+            pbar.set_postfix_str(
+                f"{start:%Y-%m} | {self._n_submissions} subs, {self._n_comments} cmts",
+                refresh=False,
+            )
 
         # Newest first, matching the order `subreddit.new()` yields for the live engines.
         return sorted(batch.values(), key=lambda r: r["created_utc"], reverse=True)

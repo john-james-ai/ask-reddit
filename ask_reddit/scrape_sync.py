@@ -42,7 +42,7 @@ from typing import Any, Dict, List
 
 import praw
 from praw.models import Comment, Submission
-from tqdm import tqdm
+from tqdm.auto import tqdm
 
 from ask_reddit.constants import DEFAULT_ERROR_TOLERANCE, MONTH_SPAN_FORMAT
 from ask_reddit.model import GenAIModel
@@ -137,7 +137,7 @@ class RedditScraper(BaseRedditScraper[praw.Reddit]):
         # This 'for' loop is the only control loop needed. PRAW handles the pagination
         # of submissions automatically. The loop is terminated by 'break' when the
         # stop condition is met.
-        pbar = tqdm(total=None, desc="\t\tProcessing...", disable=not self._verbose)
+        pbar = tqdm(total=None, desc="\t\tProcessing...")
 
         for submission in self._scraper.subreddit(self._subreddit).new(limit=None):
             try:

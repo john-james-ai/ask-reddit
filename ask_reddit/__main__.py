@@ -32,6 +32,7 @@ import asyncpraw
 import praw
 import typer
 from dotenv import load_dotenv
+from tqdm.auto import tqdm
 
 import aiohttp
 
@@ -55,6 +56,23 @@ app = typer.Typer(
     help="A CLI tool to scrape Reddit submissions and comments for a specified time period.",
     add_completion=False,
 )
+
+
+class _TqdmLoggingHandler(logging.Handler):
+    """Write log records without tearing the progress bar apart.
+
+    A plain ``StreamHandler`` writes straight into the same stream the bar is redrawing,
+    which leaves the bar duplicated mid-line and the message half-overwritten. ``tqdm.write``
+    clears the bar, emits the line, and redraws it underneath. Writes to stderr because that
+    is where the bar itself is written; splitting them across streams puts the clearing
+    sequence on one stream and the bar on the other, which is the corruption this avoids.
+    """
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            tqdm.write(self.format(record), file=sys.stderr)
+        except Exception:
+            self.handleError(record)
 
 
 def setup_logging(log_filepath: str) -> None:
@@ -99,9 +117,14 @@ def setup_logging(log_filepath: str) -> None:
     for noisy in ("httpx", "httpcore"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
 
-    # Also log to the console if configured to do so
+    # Also log to the console if configured to do so. The console is where the progress bar
+    # lives, so it is held to a higher bar than the file: INFO and WARNING are routine
+    # during a scrape (skipped spans, throttling) and belong in the file, where they can be
+    # read after the fact without competing with the bar for the same lines. Only ERROR and
+    # above interrupt, and those go through the tqdm-aware handler so the bar survives.
     if os.getenv("LOG_TO_CONSOLE", "false").lower() == "true":
-        console_handler = logging.StreamHandler(sys.stdout)
+        console_handler = _TqdmLoggingHandler()
+        console_handler.setLevel(logging.ERROR)
         console_handler.setFormatter(formatter)
         logger.addHandler(console_handler)
 

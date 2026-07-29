@@ -57,7 +57,7 @@ from typing import Dict, List
 import asyncpraw
 from asyncpraw.models import Comment, Submission
 from asyncprawcore.exceptions import Forbidden, NotFound, Redirect, TooManyRequests
-from tqdm import tqdm
+from tqdm.auto import tqdm
 
 from ask_reddit.constants import (
     DEFAULT_CONCURRENCY,
@@ -159,7 +159,7 @@ class ARedditScraper(BaseRedditScraper[asyncpraw.Reddit]):
         submission_span_str = None
         aborted = False
 
-        pbar = tqdm(total=None, desc="\t\tProcessing...", disable=not self._verbose)
+        pbar = tqdm(total=None, desc="\t\tProcessing...")
 
         # A subreddit that is missing, private, quarantined, or misspelled fails here
         # rather than at construction, since the listing is what first contacts the API.
