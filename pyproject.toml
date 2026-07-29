@@ -10,8 +10,9 @@ description = "A Python scraper using PRAW to extract Reddit comments for NLP an
 readme = "README.md"
 authors = ["john-james-ai <john.james.ai.studio@gmail.com>"]
 license = "MIT"
-repository = "https://github.com/ask-reddit/ask-reddit"
-homepage = "https://github.com/ask-reddit/ask-reddit"
+packages = [{ include = "ask" }]
+repository = "https://github.com/john-james-ai/ask-reddit"
+homepage = "https://github.com/john-james-ai/ask-reddit"
 
 # Keywords description https://python-poetry.org/docs/pyproject/#keywords
 keywords = []  #! Update me
