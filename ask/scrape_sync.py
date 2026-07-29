@@ -2,17 +2,17 @@
 # ================================================================================================ #
 # Project    : Ask Reddit                                                                          #
 # Project    : Ask Reddit                                                                          #
-# Version    : 0.1.0                                                                               #
+# Version    : 0.3.1                                                                               #
 # Python     : 3.13.5                                                                              #
-# Filename   : /ask/scrape_sync.py                                                                 #
-# Filename   : /ask/scrape_sync.py                                                                 #
+# Filename   : scrape_sync.py                                                                      #
+# Filename   : scrape_sync.py                                                                      #
 # ------------------------------------------------------------------------------------------------ #
 # Author     : John James                                                                          #
 # URL        : https://github.com/john-james-ai/ask-reddit/                                        #
 # URL        : https://github.com/john-james-ai/ask-reddit/                                        #
 # ------------------------------------------------------------------------------------------------ #
-# Modified   : Wednesday July 29th 2026 12:15:57 am                                                #
-# Modified   : Wednesday July 29th 2026 12:15:57 am                                                #
+# Modified   : Wednesday July 29th 2026 01:26:58 am                                                #
+# Modified   : Wednesday July 29th 2026 01:26:58 am                                                #
 # ------------------------------------------------------------------------------------------------ #
 # License    : MIT License                                                                         #
 # Copyright  : (c) 2026 John James                                                                 #
@@ -21,7 +21,7 @@
 # -*- coding:utf-8 -*-
 # ================================================================================================ #
 # Project    : Ask Reddit                                                                          #
-# Version    : 0.1.0                                                                               #
+# Version    : 0.3.1                                                                               #
 # Python     : 3.13.5                                                                              #
 # Filename   : /ask/scrape_sync.py                                                                 #
 # ------------------------------------------------------------------------------------------------ #

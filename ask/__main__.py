@@ -2,17 +2,17 @@
 # ================================================================================================ #
 # Project    : Ask Reddit                                                                          #
 # Description: Reddit Scraper.                                                                     #
-# Version    : 0.1.0                                                                               #
+# Version    : 0.3.1                                                                               #
 # Python     : 3.13.5                                                                              #
-# Filename   : /ask/__main__.py                                                                    #
-# Filename   : /ask/__main__.py                                                                    #
+# Filename   : __main__.py                                                                         #
+# Filename   : __main__.py                                                                         #
 # ------------------------------------------------------------------------------------------------ #
 # Author     : John James                                                                          #
 # Email      : john@variancexplained.ai                                                            #
 # URL        : https://github.com/john-james-ai/ask-reddit/                                        #
 # ------------------------------------------------------------------------------------------------ #
 # Created    : Friday July 24th 2026 07:29:32 am                                                   #
-# Modified   : Wednesday July 29th 2026 12:15:57 am                                                #
+# Modified   : Wednesday July 29th 2026 01:26:58 am                                                #
 # ------------------------------------------------------------------------------------------------ #
 # License    : MIT License                                                                         #
 # Copyright  : (c) 2026 John James                                                                 #
