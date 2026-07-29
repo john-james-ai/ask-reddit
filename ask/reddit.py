@@ -27,15 +27,19 @@ write bytes to a pipe: no kernel, no comm channel, and therefore no widget.
 The split of responsibilities follows the split in the arguments. Everything that describes
 the machine -- where files land, how hard to push Arctic Shift, where the log goes -- is
 constructor state and holds for a session. Everything that describes a job -- which
-subreddit, how many months -- belongs to :meth:`run`, because those are what vary across a
+subreddit, how many months -- belongs to :meth:`scrape`, because those are what vary across a
 corpus. One controller therefore serves a whole run of subreddits, and because it outlives
 any single scrape it can keep the record of them: what was collected, when, and for how
 long, which is otherwise only recoverable by parsing the log.
 
+There is one way in: ``await controller.scrape(subreddit)``. No synchronous wrapper is
+offered, because the caller this module exists for is a notebook, whose kernel is already
+running an event loop -- exactly the case ``asyncio.run`` cannot serve. A script that needs
+a blocking call can wrap it at its own top level.
+
 This is additive. The CLI keeps its own wiring and behaviour unchanged, so anything that
 runs today still runs the same way; this is a second door into the same engine.
 """
-import asyncio
 import logging
 import os
 from datetime import datetime
@@ -252,29 +256,6 @@ class AskReddit:
             logger.critical(message)
             raise ScrapeFailed(message)
         return scraper
-
-    def run(self, subreddit: str, months: int = 1) -> ArcticShiftScraper:
-        """Scrape one subreddit from synchronous code.
-
-        Args:
-            subreddit (str): Subreddit to scrape, without the ``r/`` prefix.
-            months (int): Number of months back to cover, counting the current month.
-
-        Returns:
-            ArcticShiftScraper: The engine that ran, as :meth:`scrape` returns.
-
-        Raises:
-            RuntimeError: Called from inside a running event loop, which a Jupyter kernel
-                always has. ``asyncio.run`` cannot nest, so the caller must await instead.
-        """
-        try:
-            asyncio.get_running_loop()
-        except RuntimeError:
-            return asyncio.run(self.scrape(subreddit=subreddit, months=months))
-        raise RuntimeError(
-            "run() cannot be called from inside a running event loop, which is what a "
-            "Jupyter kernel provides. Use 'await controller.scrape(subreddit)' instead."
-        )
 
     def _record(
         self,
