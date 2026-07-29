@@ -2,24 +2,23 @@
 # -*- coding:utf-8 -*-
 # ================================================================================================ #
 # Project    : Ask Reddit                                                                          #
-# Version    : 0.1.0                                                                               #
+# Version    : 0.3.0                                                                               #
 # Python     : 3.12.3                                                                              #
-# Filename   : /scraper/print.py                                                                   #
+# Filename   : print.py                                                                            #
 # ------------------------------------------------------------------------------------------------ #
 # Author     : John James                                                                          #
 # Email      : john@variancexplained.com                                                           #
 # URL        : https://github.com/john-james-ai/ask-reddit/                                        #
 # ------------------------------------------------------------------------------------------------ #
 # Created    : Monday May 6th 2024 11:07:56 pm                                                     #
-# Modified   : Sunday June 22nd 2025 03:18:15 am                                                   #
+# Modified   : Wednesday July 29th 2026 01:05:37 am                                                #
 # ------------------------------------------------------------------------------------------------ #
 # License    : MIT License                                                                         #
 # Copyright  : (c) 2024 John James                                                                 #
 # ================================================================================================ #
-from typing import Union
-
 import textwrap
 from datetime import date, datetime
+from typing import Union
 
 import numpy as np
 import pandas as pd

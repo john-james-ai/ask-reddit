@@ -4,7 +4,7 @@
 # Project    : Ask Reddit                                                                          #
 # Version    : 0.1.0                                                                               #
 # Python     : 3.13.5                                                                              #
-# Filename   : model.py                                                                            #
+# Filename   : /ask/model.py                                                                       #
 # ------------------------------------------------------------------------------------------------ #
 # Author     : John James                                                                          #
 # Email      : john.james.ai.studio@gmail.com                                                      #
@@ -59,12 +59,12 @@ class GenAIModel:
         The failure is never silent.
 
         Args:
-            data: A list of dictionaries to be tokenized. Each record is serialized
-                  to JSON before tokenization.
+            data (List): A list of dictionaries to be tokenized. Each record is
+                serialized to JSON before tokenization.
 
         Returns:
-            The total number of tokens across all records. If one or more chunks
-            failed, the total covers only the records that were counted.
+            int: The total number of tokens across all records. If one or more chunks
+                failed, the total covers only the records that were counted.
         """
         total_tokens = 0
         n_uncounted = 0
@@ -95,7 +95,7 @@ class GenAIModel:
         yielded on its own rather than dropped.
 
         Args:
-            data: The list of records to split.
+            data (List): The list of records to split.
 
         Yields:
             Tuple[List, str]: The records in the chunk, and their serialized JSON.

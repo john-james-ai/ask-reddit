@@ -4,8 +4,8 @@
 # Project    : Ask Reddit                                                                          #
 # Version    : 0.1.0                                                                               #
 # Python     : 3.13.5                                                                              #
-# Filename   : scrape_sync.py                                                                      #
-# Filename   : scrape_sync.py                                                                      #
+# Filename   : /ask/scrape_sync.py                                                                 #
+# Filename   : /ask/scrape_sync.py                                                                 #
 # ------------------------------------------------------------------------------------------------ #
 # Author     : John James                                                                          #
 # URL        : https://github.com/john-james-ai/ask-reddit/                                        #
@@ -23,7 +23,7 @@
 # Project    : Ask Reddit                                                                          #
 # Version    : 0.1.0                                                                               #
 # Python     : 3.13.5                                                                              #
-# Filename   : /ask_reddit/scrape.py                                                               #
+# Filename   : /ask/scrape_sync.py                                                                 #
 # ------------------------------------------------------------------------------------------------ #
 # Author     : John James                                                                          #
 # Email      : john.james.ai.studio@gmail.com                                                      #
@@ -61,7 +61,7 @@ class RedditScraper(BaseRedditScraper[praw.Reddit]):
     This class performs a single, full scraping job using the blocking PRAW
     client. It iterates over new submissions from a subreddit, processes each
     submission and its comments, groups results into time-based batches, and
-    persists batches via :class:`ask_reddit.persist.FileManager`.
+    persists batches via :class:`ask.persist.FileManager`.
 
     Args:
         scraper (praw.Reddit): Authenticated PRAW Reddit client.
@@ -71,11 +71,13 @@ class RedditScraper(BaseRedditScraper[praw.Reddit]):
         months (int): Number of past months to include in the scrape.
         filemanager (FileManager): FileManager used to persist batches.
         tolerance (int): Consecutive failures tolerated before the run aborts.
-        verbose (bool): When True, progress and summary output is written to the
-            console. Errors go to stderr regardless. Logging is unaffected.
         force (bool): When True, scrape the full requested window instead of
             resuming from what is already on file. Existing files are never
             overwritten either way; a rescrape is written alongside them.
+        verbose (bool): When True, progress and summary output is written to the
+            console. Errors go to stderr regardless. Logging is unaffected.
+        **kwargs: Swallowed, so a caller can pass the union of every engine's options
+            without checking which engine it built. Nothing here reads them.
 
     Examples:
         >>> scraper = RedditScraper(scraper=reddit, model=model, printer=printer,

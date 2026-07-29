@@ -168,7 +168,7 @@ async def request_against(
     response handling are all the production code under test.
 
     Args:
-            server (Any): Scripted local archive to answer the request.
+        server (Any): Scripted local archive to answer the request.
         monkeypatch (pytest.MonkeyPatch): Patcher used to redirect the base URL.
         directory (Path): Output directory for the scraper's file manager.
         subreddit (str): Subreddit name the scraper is built for.

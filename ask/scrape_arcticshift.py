@@ -11,8 +11,8 @@
 # URL        : https://github.com/john-james-ai/ask-reddit/                                        #
 # URL        : https://github.com/john-james-ai/ask-reddit/                                        #
 # ------------------------------------------------------------------------------------------------ #
-# Modified   : Wednesday July 29th 2026 12:15:57 am                                                #
-# Modified   : Wednesday July 29th 2026 12:15:57 am                                                #
+# Modified   : Wednesday July 29th 2026 12:26:44 am                                                #
+# Modified   : Wednesday July 29th 2026 12:26:44 am                                                #
 # ------------------------------------------------------------------------------------------------ #
 # License    : MIT License                                                                         #
 # Copyright  : (c) 2026 John James                                                                 #
@@ -21,9 +21,9 @@
 # -*- coding:utf-8 -*-
 # ================================================================================================ #
 # Project    : Ask Reddit                                                                          #
-# Version    : 0.1.0                                                                               #
+# Version    : 0.3.0                                                                               #
 # Python     : 3.13.5                                                                              #
-# Filename   : /ask_reddit/scrape_arcticshift.py                                                       #
+# Filename   : /ask/scrape_arcticshift.py                                                          #
 # ------------------------------------------------------------------------------------------------ #
 # Author     : John James                                                                          #
 # Email      : john@variancexplained.ai                                                            #
@@ -37,7 +37,7 @@
 # ================================================================================================ #
 """Arctic Shift Scrape Module.
 
-A third engine alongside :mod:`ask_reddit.scrape_sync` and :mod:`ask_reddit.scrape_async`,
+A third engine alongside :mod:`ask.scrape_sync` and :mod:`ask.scrape_async`,
 reading from the Arctic Shift rather than from Reddit itself. It exists because the
 other two cannot reach the data: every Reddit listing endpoint is capped at roughly 1000
 items, so ``subreddit.new(limit=None)`` returns about a week of a busy subreddit no matter
@@ -364,6 +364,8 @@ class ArcticShiftScraper(BaseRedditScraper[aiohttp.ClientSession]):
         window_hours (int): Size of the time slices a span is cut into. Pagination is
             serial within a slice, so this is what bounds how much of ``concurrency``
             can actually be used.
+        **kwargs: Swallowed, so a caller can pass the union of every engine's options
+            without checking which engine it built. Nothing here reads them.
 
     Examples:
         >>> async with aiohttp.ClientSession() as session:

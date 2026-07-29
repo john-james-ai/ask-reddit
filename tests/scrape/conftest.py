@@ -218,6 +218,10 @@ def corpus_without(tmp_path: Path, subreddit: str) -> Callable[[Path, List[int]]
     resulting state is genuine rather than fabricated. Paths are resolved through the
     real `FileManager`, so the naming matches what a scrape would have written.
 
+    Args:
+        tmp_path (Path): Pytest's per-test directory, where the copy is written.
+        subreddit (str): Subreddit the corpus belongs to, used as the FileManager topic.
+
     Returns:
         Callable[[Path, List[int]], Path]: Function taking the source corpus directory
             and the month counts to remove, returning the modified copy.
@@ -261,7 +265,7 @@ def corpus_without(tmp_path: Path, subreddit: str) -> Callable[[Path, List[int]]
 class ScriptedResponse:
     """One reply the local archive should send.
 
-    Args:
+    Attributes:
         status (int): HTTP status to answer with.
         headers (Dict[str, str]): Extra response headers, such as ``x-ratelimit-reset``.
         data (List[Dict[str, Any]]): Records to place under the payload's ``data`` key.

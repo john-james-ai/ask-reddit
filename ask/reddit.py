@@ -4,7 +4,7 @@
 # Project    : Ask Reddit                                                                          #
 # Version    : 0.1.0                                                                               #
 # Python     : 3.13.5                                                                              #
-# Filename   : controller.py                                                                       #
+# Filename   : /ask/reddit.py                                                                      #
 # ------------------------------------------------------------------------------------------------ #
 # Author     : John James                                                                          #
 # Email      : john@variancexplained.ai                                                            #
@@ -18,7 +18,7 @@
 # ================================================================================================ #
 """Programmatic entry point for a scrape, for callers that are not a command line.
 
-:mod:`ask_reddit.__main__` wires a run by hand inside a Typer command: logging, the
+:mod:`ask.__main__` wires a run by hand inside a Typer command: logging, the
 :class:`FileManager`, the token-count model, the printer, the session, the engine. That
 wiring is only reachable by launching a process, which is the wrong shape for a notebook.
 A shelled-out run puts the scraper's progress bar in a child process, where it can only
@@ -218,8 +218,8 @@ class AskReddit:
         Raises:
             ScrapeFailed: The run captured nothing; every span failed. The run is recorded
                 before this is raised, so a caller that catches it still sees the attempt
-                in :meth:`summary`.
-            RuntimeError: The FileManager could not be built, so there is nowhere to write.
+                in :meth:`summary`. A RuntimeError from the FileManager propagates too;
+                it is documented on the method that raises it.
         """
         # The only collaborator that cannot be built once: it is scoped to one subreddit's
         # topic. The model and printer were built with the controller.
@@ -350,6 +350,9 @@ class AskReddit:
 
         Returns:
             FileManager: Configured for this subreddit under the controller's directory.
+
+        Raises:
+            RuntimeError: The FileManager could not be built, so there is nowhere to write.
         """
         try:
             return FileManager(

@@ -130,3 +130,11 @@ branch = true
 [coverage.report]
 fail_under = 50
 show_missing = true
+
+[tool.pydoclint]
+# Replaces the darglint settings that lived in setup.cfg. pydoclint reads pyproject.toml,
+# which darglint never could, so the separate file is no longer needed.
+style = "google"
+arg-type-hints-in-docstring = true
+check-return-types = true
+exclude = '\.venv|build|dist'

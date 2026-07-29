@@ -4,8 +4,8 @@
 # Description: Reddit Scraper.                                                                     #
 # Version    : 0.1.0                                                                               #
 # Python     : 3.13.5                                                                              #
-# Filepath   : /ask_reddit                                                                         #
-# Filename   : persist.py                                                                          #
+# Filename   : /ask/persist.py                                                                     #
+# Filename   : /ask/persist.py                                                                     #
 # ------------------------------------------------------------------------------------------------ #
 # Author     : John James                                                                          #
 # Email      : john@variancexplained.ai                                                            #
@@ -74,16 +74,17 @@ class FileManager:
         The filename is created by combining the instance `source`, `topic`,
         and the provided `span` (for example, ``'2026-07'``).
 
+        Nothing is caught here: a missing file raises FileNotFoundError and malformed
+        contents raise json.JSONDecodeError, both straight from the standard library. They
+        are described here rather than in a Raises section because no raise statement in
+        this body produces them.
+
         Args:
             span (str): Identifier for the file (for example, a date like
                 ``'YYYY-MM'``) used to construct the filename.
 
         Returns:
             List[Dict[str, Any]]: The list of records loaded from the file.
-
-        Raises:
-            FileNotFoundError: If the constructed file does not exist.
-            json.JSONDecodeError: If the file contents are not valid JSON.
         """
         filepath = self.create_filepath(span=span)
 
@@ -98,9 +99,6 @@ class FileManager:
             data (List[Dict[str, Any]]): List of serializable records to write.
             span (str): Identifier used to construct the filename (for example,
                 a date string like ``'YYYY-MM'``).
-
-        Returns:
-            None
         """
         filepath = self.create_filepath(span=span, for_new_file=True)
         os.makedirs(filepath.parent, exist_ok=True)
@@ -127,7 +125,7 @@ class FileManager:
         """Return the month count of the most recent span already on file.
 
         The count uses the same 1-based indexing as
-        :meth:`ask_reddit.date.DateTime.get_month_st`, where 1 is the current
+        :meth:`ask.date.DateTime.get_month_st`, where 1 is the current
         month, 2 is the month before it, and so on. If today falls in July and
         the most recent span on file is March, the return value is 5.
 

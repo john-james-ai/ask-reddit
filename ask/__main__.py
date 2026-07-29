@@ -4,8 +4,8 @@
 # Description: Reddit Scraper.                                                                     #
 # Version    : 0.1.0                                                                               #
 # Python     : 3.13.5                                                                              #
-# Filepath   : /ask_reddit                                                                         #
-# Filename   : __main__.py                                                                         #
+# Filename   : /ask/__main__.py                                                                    #
+# Filename   : /ask/__main__.py                                                                    #
 # ------------------------------------------------------------------------------------------------ #
 # Author     : John James                                                                          #
 # Email      : john@variancexplained.ai                                                            #
@@ -348,6 +348,10 @@ async def run_arcticshift(
             scraper's own default applies.
         window_hours (Optional[int]): Size of the time slices a span is cut into. When
             None, the scraper's own default applies.
+
+    Raises:
+        typer.Exit: The run captured nothing; every span failed. Raised rather than
+            returned so a batch over many subreddits cannot walk past the failure.
     """
     # Omitted rather than passed as None, so each default lives in exactly one place: the
     # scraper's own signature.
@@ -464,13 +468,19 @@ def main(
         directory (Optional[str]): Output directory for scraped files. When
             omitted, the ``FILE_LOCATION`` environment variable or ``'data'``
             is used.
-        force (bool): When True, scrape the full requested window rather than
-            resuming from what is already on file.
-        verbose (bool): When True, print progress and the summary to the console.
         concurrency (Optional[int]): Maximum requests in flight, for the engines that
             make more than one at a time. None leaves the engine's own default.
         window_hours (Optional[int]): Arctic Shift engine only; size of the time slices a
             month is cut into. None leaves the engine's own default.
+        verbose (bool): When True, print the run summary to the console. The progress bar
+            shows regardless.
+        force (bool): When True, scrape the full requested window rather than
+            resuming from what is already on file.
+
+    Raises:
+        typer.Exit: The FileManager could not be built, Reddit authentication failed, or
+            the scrape captured nothing. Every one of these must exit non-zero so a shell
+            loop over many subreddits registers the failure.
     """
 
     # Setup Logging

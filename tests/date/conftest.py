@@ -2,16 +2,16 @@
 # -*- coding:utf-8 -*-
 # ================================================================================================ #
 # Project    : Ask Reddit                                                                          #
-# Version    : 0.1.0                                                                               #
+# Version    : 0.3.0                                                                               #
 # Python     : 3.13.5                                                                              #
-# Filename   : /tests/date/conftest.py                                                             #
+# Filename   : conftest.py                                                                         #
 # ------------------------------------------------------------------------------------------------ #
 # Author     : John James                                                                          #
 # Email      : john.james.ai.studio@gmail.com                                                      #
 # URL        : https://github.com/john-james-ai/ask-reddit/                                        #
 # ------------------------------------------------------------------------------------------------ #
 # Created    : Saturday July 25th 2026 12:00:00 pm                                                 #
-# Modified   : Saturday July 25th 2026 12:00:00 pm                                                 #
+# Modified   : Wednesday July 29th 2026 01:05:37 am                                                #
 # ------------------------------------------------------------------------------------------------ #
 # License    : MIT License                                                                         #
 # Copyright  : (c) 2025 John James                                                                 #
@@ -34,9 +34,8 @@ Characteristics of the module under test that shape these fixtures:
   ``timedelta``. Their fixtures are plain boundary values chosen to land on each side of the
   60 second, 3600 second, and 86400 second thresholds that select the output branches.
 """
-from typing import Callable, Dict, List, Tuple
-
 from datetime import datetime, timedelta, timezone
+from typing import Callable, Dict, List, Tuple
 
 import pytest
 

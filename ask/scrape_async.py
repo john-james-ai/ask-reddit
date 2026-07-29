@@ -2,7 +2,7 @@
 # ================================================================================================ #
 # Project    : Ask Reddit                                                                          #
 # Project    : Ask Reddit                                                                          #
-# Version    : 0.1.0                                                                               #
+# Version    : 0.3.0                                                                               #
 # Python     : 3.13.5                                                                              #
 # Filename   : scrape_async.py                                                                     #
 # Filename   : scrape_async.py                                                                     #
@@ -11,8 +11,8 @@
 # URL        : https://github.com/john-james-ai/ask-reddit/                                        #
 # URL        : https://github.com/john-james-ai/ask-reddit/                                        #
 # ------------------------------------------------------------------------------------------------ #
-# Modified   : Wednesday July 29th 2026 12:15:57 am                                                #
-# Modified   : Wednesday July 29th 2026 12:15:57 am                                                #
+# Modified   : Wednesday July 29th 2026 12:26:44 am                                                #
+# Modified   : Wednesday July 29th 2026 12:26:44 am                                                #
 # ------------------------------------------------------------------------------------------------ #
 # License    : MIT License                                                                         #
 # Copyright  : (c) 2026 John James                                                                 #
@@ -21,9 +21,9 @@
 # -*- coding:utf-8 -*-
 # ================================================================================================ #
 # Project    : Ask Reddit                                                                          #
-# Version    : 0.1.0                                                                               #
+# Version    : 0.3.0                                                                               #
 # Python     : 3.13.5                                                                              #
-# Filename   : /ask_reddit/ascrape.py                                                              #
+# Filename   : /ask/scrape_async.py                                                                #
 # ------------------------------------------------------------------------------------------------ #
 # Author     : John James                                                                          #
 # Email      : john.james.ai.studio@gmail.com                                                      #
@@ -37,7 +37,7 @@
 # ================================================================================================ #
 """Asynchronous Scrape Module.
 
-An async counterpart to :mod:`ask_reddit.scrape_sync`. Both engines leave request pacing
+An async counterpart to :mod:`ask.scrape_sync`. Both engines leave request pacing
 entirely to the PRAW rate limiter, which follows Reddit's API rules from the response
 headers; neither sleeps on its own schedule. Concurrency (fetching many submissions'
 comment trees at once) is what raises throughput over the synchronous scraper; a semaphore
@@ -79,7 +79,7 @@ logger = logging.getLogger(__name__)
 class ARedditScraper(BaseRedditScraper[asyncpraw.Reddit]):
     """Asynchronously scrape submissions and comments from a subreddit.
 
-    This is a faster, async counterpart to :class:`ask_reddit.scrape.RedditScraper`.
+    This is a faster, async counterpart to :class:`ask.scrape.RedditScraper`.
     It maintains the same output schema and batch grouping but fetches comment
     trees concurrently to increase throughput. Async PRAW enforces Reddit's rate
     limits; this implementation bounds concurrency with a semaphore to limit
@@ -93,11 +93,11 @@ class ARedditScraper(BaseRedditScraper[asyncpraw.Reddit]):
         months (int): Number of past months to include in the scrape.
         filemanager (FileManager): FileManager used to persist batches.
         tolerance (int): Consecutive failures tolerated before the run aborts.
-        verbose (bool): When True, progress and summary output is written to the
-            console. Errors go to stderr regardless. Logging is unaffected.
         force (bool): When True, scrape the full requested window instead of
             resuming from what is already on file. Existing files are never
             overwritten either way; a rescrape is written alongside them.
+        verbose (bool): When True, progress and summary output is written to the
+            console. Errors go to stderr regardless. Logging is unaffected.
         concurrency (int): Maximum concurrent submission processors.
         max_retries (int): Number of retries for retriable operations.
         retry_backoff (float): Base backoff seconds used when rate limited.
